@@ -18,8 +18,8 @@ let package = Package(
             name: "Wift",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
-            ],
+            ]
         ),
         .testTarget(name: "WiftTests", dependencies: ["Wift"]),
-    ],
+    ]
 )

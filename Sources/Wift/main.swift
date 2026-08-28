@@ -3,7 +3,7 @@ import ArgumentParser
 struct WiftCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "wift",
-        abstract: "Run a cached single-file Swift script.",
+        abstract: "Run a cached single-file Swift script."
     )
 
     @Argument(help: "Path to a Swift script.")

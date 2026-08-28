@@ -4,16 +4,37 @@ included:
 
 excluded:
   - .build
-
-opt_in_rules:
-  - empty_count
-  - fatal_error_message
+  - .swiftpm
 
 line_length:
-  warning: 120
+  warning: 140
   error: 160
   ignores_comments: true
   ignores_urls: true
+  ignores_interpolated_strings: true
 
-reporter: xcode
+opt_in_rules:
+  - empty_count
+  - comment_spacing
+  - multiline_function_chains
+  - void_function_in_ternary
 
+disabled_rules:
+  # SwiftFormat owns whitespace, indentation, and brace placement.
+  - opening_brace
+  - indentation_width
+  - file_length
+  - type_body_length
+  - function_body_length
+  - function_parameter_count
+  - identifier_name
+  - todo
+  - trailing_comma
+  - for_where
+  - cyclomatic_complexity
+
+trailing_whitespace:
+  ignores_empty_lines: true
+  ignores_comments: false
+
+warning_threshold: 3

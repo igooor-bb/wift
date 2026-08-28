@@ -1,5 +1,18 @@
---swiftversion 6.2
+--swiftversion 6
 --indent 4
---linebreaks lf
---maxwidth 120
+--allman false
+--maxwidth 140
+--wraparguments before-first
+--wrapcollections before-first
+--importgrouping alphabetized,testable-last
+--self remove
+--trimwhitespace always
+--header strip
+--blank-line-after-switch-case always
+--trailing-commas always
 
+--enable andOperator
+--enable blankLineAfterSwitchCase
+--enable hoistTry
+--enable redundantOptionalBinding
+--enable blankLinesAroundMark
