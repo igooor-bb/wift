@@ -7,6 +7,7 @@
 ```bash
 wift script.swift
 wift script.swift one --two three
+wift --verbose script.swift
 ```
 
 Every argument after the script path is passed through without interpretation. The cached executable receives the script's canonical path as `argv[0]`.
@@ -45,6 +46,28 @@ On a cache miss, `swiftc` compiles into a staging directory inside the cache. `w
 Concurrent misses for the same key use an advisory `flock` and recheck the cache after acquiring it, so only one process compiles. Once an executable is available, `execv` replaces `wift`; stdin, stdout, stderr, environment, working directory, signals, and exit status therefore retain normal Unix semantics.
 
 Successful runs are silent apart from the script's own output and compiler diagnostics.
+
+## Diagnostics
+
+Use `-v` or `--verbose` before the script path to inspect resolution, cache lookup, compilation, lock contention, and the final `exec`:
+
+```bash
+wift --verbose script.swift one two
+```
+
+Diagnostics from `wift` use the `wift:` prefix and go to stderr. The script's stdout remains unchanged. Once the script path has been parsed, all remaining options belong to the script, so `wift --verbose script.swift --verbose` enables diagnostics and also passes `--verbose` to the script.
+
+## Cache management
+
+```bash
+wift cache                         # summary and logical sizes
+wift cache path                    # absolute cache path only
+wift cache info script.swift       # current fingerprint and hit/miss state
+wift cache clean script.swift      # remove the current entry
+wift cache clean                   # remove the entire managed cache
+```
+
+`cache info` never compiles the script. `cache clean <script>` removes only the entry for the script's current fingerprint; historical entries created from older source or toolchain versions remain until the entire cache is cleaned.
 
 ## Cache semantics
 
