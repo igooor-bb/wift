@@ -18,7 +18,10 @@ run = "swiftlint"
 description = "Run the test suite"
 run = "swift test"
 
+[tasks.wift]
+description = "Run a Swift script with wift"
+run = "swift run wift"
+
 [tasks.check]
 description = "Run all project checks"
 depends = ["format-check", "lint", "test"]
-
