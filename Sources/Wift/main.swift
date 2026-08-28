@@ -5,7 +5,7 @@ struct WiftCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "wift",
         abstract: "Run a cached single-file Swift script.",
-        usage: "[options] <script.swift> [arguments...]",
+        usage: "wift [options] <script.swift> [arguments...]",
         discussion: """
         Cache commands:
           wift cache

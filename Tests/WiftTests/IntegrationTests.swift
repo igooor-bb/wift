@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import Wift
@@ -55,6 +56,42 @@ import Testing
             let silent = try fixture.run(script)
             #expect(silent.standardOutput == "hello\n")
             #expect(silent.standardError.isEmpty)
+        }
+    }
+
+    @Test func verboseReportsRealLockContention() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory, instrumentCompiler: true, gateCompiler: true)
+            let script = try fixture.writeScript("print(\"contended\")")
+            let builder = try fixture.start(script)
+            try fixture.waitForCompilerStart()
+
+            let waiter = try fixture.start(script, wiftArguments: ["--verbose"])
+            let diagnostics = waiter.readStandardError(until: "wift: waiting for cache lock\n")
+            #expect(diagnostics.contains("wift: waiting for cache lock\n"))
+
+            try fixture.releaseCompiler()
+            let builderResult = builder.wait()
+            let waiterResult = waiter.wait()
+            #expect(builderResult.exitCode == 0)
+            #expect(waiterResult.exitCode == 0)
+            #expect(waiterResult.standardError.contains("wift: cache populated by another process\n"))
+            #expect(waiterResult.standardOutput == "contended\n")
+        }
+    }
+
+    @Test func reportsHelpAndVersion() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory)
+
+            let help = try fixture.runWift(["--help"])
+            #expect(help.exitCode == 0)
+            #expect(help.standardOutput.contains("USAGE: wift [options] <script.swift> [arguments...]"))
+            #expect(help.standardOutput.contains("wift cache info <script.swift>"))
+
+            let version = try fixture.runWift(["--version"])
+            #expect(version.exitCode == 0)
+            #expect(version.standardOutput == "wift 0.1.0\n")
         }
     }
 
@@ -231,15 +268,21 @@ private struct Fixture {
     let wiftExecutable: URL
     let environment: [String: String]
     let compilerCountURL: URL?
+    let compilerStartedFIFO: URL?
+    let compilerReleaseFIFO: URL?
 
-    init(directory: URL, instrumentCompiler: Bool = false) throws {
+    init(
+        directory: URL,
+        instrumentCompiler: Bool = false,
+        gateCompiler: Bool = false
+    ) throws {
         self.directory = directory
         cacheDirectory = directory.appendingPathComponent("cache", isDirectory: true)
         wiftExecutable = try Self.findWiftExecutable()
         var environment = ProcessInfo.processInfo.environment
         environment["WIFT_CACHE_DIR"] = cacheDirectory.path
 
-        if instrumentCompiler {
+        if instrumentCompiler || gateCompiler {
             let compilerDirectory = directory.appendingPathComponent("compiler", isDirectory: true)
             try FileManager.default.createDirectory(at: compilerDirectory, withIntermediateDirectories: true)
             let countURL = compilerDirectory.appendingPathComponent("count")
@@ -248,7 +291,14 @@ private struct Fixture {
             #!/bin/sh
             case "$1" in
               --version|-print-target-info) exec "$WIFT_REAL_SWIFTC" "$@" ;;
-              *) printf 'compile\\n' >> "$WIFT_COMPILER_COUNT"; exec "$WIFT_REAL_SWIFTC" "$@" ;;
+              *)
+                printf 'compile\\n' >> "$WIFT_COMPILER_COUNT"
+                if [ -n "${WIFT_COMPILER_STARTED_FIFO:-}" ]; then
+                  printf 'started\\n' > "$WIFT_COMPILER_STARTED_FIFO"
+                  read -r _ < "$WIFT_COMPILER_RELEASE_FIFO"
+                fi
+                exec "$WIFT_REAL_SWIFTC" "$@"
+                ;;
             esac
             """
             try Data(wrapper.utf8).write(to: wrapperURL)
@@ -258,8 +308,23 @@ private struct Fixture {
             environment["WIFT_REAL_SWIFTC"] = realSwiftCompiler
             environment["WIFT_COMPILER_COUNT"] = countURL.path
             compilerCountURL = countURL
+            if gateCompiler {
+                let startedFIFO = compilerDirectory.appendingPathComponent("started.fifo")
+                let releaseFIFO = compilerDirectory.appendingPathComponent("release.fifo")
+                try Self.createFIFO(at: startedFIFO)
+                try Self.createFIFO(at: releaseFIFO)
+                environment["WIFT_COMPILER_STARTED_FIFO"] = startedFIFO.path
+                environment["WIFT_COMPILER_RELEASE_FIFO"] = releaseFIFO.path
+                compilerStartedFIFO = startedFIFO
+                compilerReleaseFIFO = releaseFIFO
+            } else {
+                compilerStartedFIFO = nil
+                compilerReleaseFIFO = nil
+            }
         } else {
             compilerCountURL = nil
+            compilerStartedFIFO = nil
+            compilerReleaseFIFO = nil
         }
 
         self.environment = environment
@@ -303,6 +368,34 @@ private struct Fixture {
             arguments: arguments,
             environment: environment
         )
+    }
+
+    func start(
+        _ script: URL,
+        wiftArguments: [String] = []
+    ) throws -> RunningProcess {
+        try RunningProcess(
+            executable: wiftExecutable,
+            arguments: wiftArguments + [script.path],
+            environment: environment
+        )
+    }
+
+    func waitForCompilerStart() throws {
+        let fifo = try #require(compilerStartedFIFO)
+        let handle = try FileHandle(forReadingFrom: fifo)
+        defer { try? handle.close() }
+        let signal = handle.readDataToEndOfFile()
+        guard signal == Data("started\n".utf8) else {
+            throw WiftError("compiler gate did not start")
+        }
+    }
+
+    func releaseCompiler() throws {
+        let fifo = try #require(compilerReleaseFIFO)
+        let handle = try FileHandle(forWritingTo: fifo)
+        defer { try? handle.close() }
+        handle.write(Data("continue\n".utf8))
     }
 
     func runConcurrently(_ script: URL, count: Int) throws -> [CommandResult] {
@@ -362,6 +455,15 @@ private struct Fixture {
         )
     }
 
+    private static func createFIFO(at url: URL) throws {
+        let result = url.path.withCString { path in
+            mkfifo(path, S_IRUSR | S_IWUSR)
+        }
+        guard result == 0 else {
+            throw WiftError("unable to create compiler gate: \(String(cString: strerror(errno)))")
+        }
+    }
+
     private static func runProcess(
         executable: URL,
         arguments: [String],
@@ -382,6 +484,7 @@ private final class RunningProcess {
     private let process = Process()
     private let standardOutput = Pipe()
     private let standardError = Pipe()
+    private var standardErrorPrefix = Data()
 
     init(
         executable: URL,
@@ -400,17 +503,34 @@ private final class RunningProcess {
 
     func wait() -> CommandResult {
         process.waitUntilExit()
+        let remainingStandardError = standardError.fileHandleForReading.readDataToEndOfFile()
+        standardErrorPrefix.append(remainingStandardError)
         return CommandResult(
             standardOutput: String(
                 data: standardOutput.fileHandleForReading.readDataToEndOfFile(),
                 encoding: .utf8
             ) ?? "",
             standardError: String(
-                data: standardError.fileHandleForReading.readDataToEndOfFile(),
+                data: standardErrorPrefix,
                 encoding: .utf8
             ) ?? "",
             exitCode: process.terminationStatus
         )
+    }
+
+    func readStandardError(until expected: String) -> String {
+        while !standardErrorText.contains(expected) {
+            let data = standardError.fileHandleForReading.availableData
+            guard !data.isEmpty else {
+                break
+            }
+            standardErrorPrefix.append(data)
+        }
+        return standardErrorText
+    }
+
+    private var standardErrorText: String {
+        String(data: standardErrorPrefix, encoding: .utf8) ?? ""
     }
 }
 
