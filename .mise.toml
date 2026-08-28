@@ -22,6 +22,18 @@ run = "swift test"
 description = "Run a Swift script with wift"
 run = "swift run wift"
 
+[tasks.install]
+description = "Install wift to ~/.local/bin"
+run = """
+swift build -c release
+install -d "$HOME/.local/bin"
+install -m 755 "$(swift build -c release --show-bin-path)/wift" "$HOME/.local/bin/wift"
+"""
+
+[tasks.uninstall]
+description = "Remove wift from ~/.local/bin"
+run = "rm -f \"$HOME/.local/bin/wift\""
+
 [tasks.check]
 description = "Run all project checks"
 depends = ["format-check", "lint", "test"]

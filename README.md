@@ -29,6 +29,17 @@ chmod +x script.swift
 
 > To try a local checkout manually, run `mise run wift Examples/Hello.swift`. This is a convenience wrapper around `swift run wift <script> [arguments...]`; for example, `mise run wift Examples/Arguments.swift one --two three`.
 
+## Installation
+
+From a local checkout, build and install a release executable into `~/.local/bin`:
+
+```bash
+mise run install
+wift --version
+```
+
+The destination is the conventional per-user binary directory and does not require `sudo`. To remove the installed executable, run `mise run uninstall`.
+
 ## How it works
 
 `wift` resolves `swiftc` from the current `PATH`, identifies the active compiler, target, and SDK, then derives a deterministic SHA-256 fingerprint:
