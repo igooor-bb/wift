@@ -37,7 +37,16 @@ struct WiftCommand: ParsableCommand {
                 try Runner(diagnostics: Diagnostics(isVerbose: verbose))
                     .run(scriptPath: scriptPath, arguments: arguments)
 
-            case .cacheSummary, .cachePath, .cacheInfo, .cacheClean:
+            case .cacheSummary:
+                try CacheAdministration().printSummary()
+
+            case .cachePath:
+                try CacheAdministration().printPath()
+
+            case let .cacheInfo(scriptPath):
+                try CacheAdministration().printInfo(scriptPath: scriptPath)
+
+            case .cacheClean:
                 throw CLIError("cache administration is not available")
             }
         } catch let failure as CompilerFailure {

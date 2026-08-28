@@ -80,12 +80,7 @@ struct Cache {
 
     func cachedExecutable(for key: CacheKey) -> URL? {
         let executable = executableURL(for: key)
-        guard let status = fileStatus(at: executable),
-              status.st_uid == geteuid(),
-              status.st_mode & S_IFMT == S_IFREG,
-              status.st_mode & S_IXUSR != 0,
-              status.st_mode & (S_IWGRP | S_IWOTH) == 0
-        else {
+        guard isTrustedExecutable(executable) else {
             return nil
         }
         return executable
@@ -146,6 +141,15 @@ struct Cache {
         try? fileManager.removeItem(at: entry)
     }
 
+    func statistics() throws -> CacheStatistics {
+        try CacheStatistics(
+            executableCount: validExecutableCount(),
+            executableBytes: logicalSize(of: executablesDirectory),
+            moduleCacheBytes: logicalSize(of: moduleCacheDirectory),
+            totalBytes: logicalSize(of: root)
+        )
+    }
+
     private func validatePrivateDirectory(_ directory: URL) throws {
         guard let status = fileStatus(at: directory),
               status.st_uid == geteuid(),
@@ -174,5 +178,62 @@ struct Cache {
             lstat(path, &status)
         }
         return result == 0 ? status : nil
+    }
+
+    private func validExecutableCount() throws -> Int {
+        try files(in: executablesDirectory).reduce(into: 0) { count, file in
+            if file.lastPathComponent == "executable", isTrustedExecutable(file) {
+                count += 1
+            }
+        }
+    }
+
+    private func logicalSize(of directory: URL) throws -> UInt64 {
+        try files(in: directory).reduce(into: 0) { size, file in
+            guard let values = try? file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true
+            else {
+                return
+            }
+            size += UInt64(values.fileSize ?? 0)
+        }
+    }
+
+    private func files(in directory: URL) throws -> [URL] {
+        guard fileManager.fileExists(atPath: directory.path) else {
+            return []
+        }
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey],
+            options: []
+        ) else {
+            throw WiftError("unable to read cache directory: \(directory.path)")
+        }
+
+        var files = [URL]()
+        for case let file as URL in enumerator {
+            guard let values = try? file.resourceValues(forKeys: [.isSymbolicLinkKey]) else {
+                continue
+            }
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            files.append(file)
+        }
+        return files
+    }
+
+    private func isTrustedExecutable(_ executable: URL) -> Bool {
+        guard let status = fileStatus(at: executable),
+              status.st_uid == geteuid(),
+              status.st_mode & S_IFMT == S_IFREG,
+              status.st_mode & S_IXUSR != 0,
+              status.st_mode & (S_IWGRP | S_IWOTH) == 0
+        else {
+            return false
+        }
+        return true
     }
 }

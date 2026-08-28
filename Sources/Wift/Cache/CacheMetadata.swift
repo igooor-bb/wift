@@ -42,4 +42,13 @@ struct CacheMetadata: Codable, Equatable {
             throw WiftError("unable to write cache metadata: \(error.localizedDescription)")
         }
     }
+
+    static func read(from url: URL) -> CacheMetadata? {
+        guard let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(CacheMetadata.self, from: data)
+    }
 }

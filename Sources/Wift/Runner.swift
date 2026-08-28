@@ -19,16 +19,17 @@ struct Runner {
         scriptPath: String,
         arguments: [String]
     ) throws -> Never {
-        let script = try Script.resolve(scriptPath, fileManager: fileManager)
-        let cache = try Cache(environment: environment, fileManager: fileManager)
+        let context = try ScriptContext.resolve(
+            scriptPath: scriptPath,
+            environment: environment,
+            fileManager: fileManager
+        )
+        let script = context.script
+        let cache = context.cache
         try cache.prepare()
-        let toolchain = try Toolchain.resolve(environment: environment)
-        let compilerArguments = toolchain.compilerArguments(moduleCachePath: cache.moduleCacheDirectory.path)
-        let key = FingerprintInput(
-            script: script,
-            toolchain: toolchain,
-            compilerArguments: compilerArguments
-        ).cacheKey()
+        let toolchain = context.toolchain
+        let compilerArguments = context.compilerArguments
+        let key = context.key
         diagnostics.log("script: \(script.path)")
         diagnostics.log("compiler: \(toolchain.compilerPath)")
         diagnostics.log("cache key: \(key.rawValue)")

@@ -58,6 +58,46 @@ import Testing
         }
     }
 
+    @Test func inspectsCacheWithoutCompiling() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory)
+            let script = try fixture.writeScript("print(\"hello\")")
+
+            let path = try fixture.runWift(["cache", "path"])
+            #expect(path.exitCode == 0)
+            #expect(path.standardOutput == "\(fixture.cacheDirectory.path)\n")
+            #expect(!FileManager.default.fileExists(atPath: fixture.cacheDirectory.path))
+
+            let miss = try fixture.runWift(["cache", "info", script.path])
+            #expect(miss.exitCode == 0)
+            #expect(miss.standardOutput.contains("Cache status: miss\n"))
+            #expect(try fixture.cachedExecutables().isEmpty)
+
+            _ = try fixture.run(script)
+            let hit = try fixture.runWift(["cache", "info", script.path])
+            #expect(hit.exitCode == 0)
+            #expect(hit.standardOutput.contains("Cache status: hit\n"))
+            #expect(hit.standardOutput.contains("Cache key: "))
+            #expect(hit.standardOutput.contains("Created: "))
+        }
+    }
+
+    @Test func summarizesValidCacheEntries() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory)
+            let script = try fixture.writeScript("print(1)")
+            _ = try fixture.run(script)
+            try Data("print(2)".utf8).write(to: script)
+            _ = try fixture.run(script)
+
+            let summary = try fixture.runWift(["cache"])
+            #expect(summary.exitCode == 0)
+            #expect(summary.standardOutput.contains("Executables: 2\n"))
+            #expect(summary.standardOutput.contains("Module cache: "))
+            #expect(summary.standardOutput.contains("Total: "))
+        }
+    }
+
     @Test func preservesArgumentsEnvironmentAndWorkingDirectory() throws {
         try withTemporaryDirectory { directory in
             let fixture = try Fixture(directory: directory)
@@ -216,6 +256,14 @@ private struct Fixture {
         var environment = environment
         environment["PATH"] = "\(wiftExecutable.deletingLastPathComponent().path):\(environment["PATH", default: ""])"
         return try Self.runProcess(executable: script, arguments: [], environment: environment)
+    }
+
+    func runWift(_ arguments: [String]) throws -> CommandResult {
+        try Self.runProcess(
+            executable: wiftExecutable,
+            arguments: arguments,
+            environment: environment
+        )
     }
 
     func runConcurrently(_ script: URL, count: Int) throws -> [CommandResult] {
