@@ -1,0 +1,19 @@
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+
+opt_in_rules:
+  - empty_count
+  - fatal_error_message
+
+line_length:
+  warning: 120
+  error: 160
+  ignores_comments: true
+  ignores_urls: true
+
+reporter: xcode
+
