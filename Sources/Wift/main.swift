@@ -33,8 +33,9 @@ struct WiftCommand: ParsableCommand {
                 verbose: verbose
             )
             switch invocation {
-            case let .run(scriptPath, arguments, _):
-                try Runner().run(scriptPath: scriptPath, arguments: arguments)
+            case let .run(scriptPath, arguments, verbose):
+                try Runner(diagnostics: Diagnostics(isVerbose: verbose))
+                    .run(scriptPath: scriptPath, arguments: arguments)
 
             case .cacheSummary, .cachePath, .cacheInfo, .cacheClean:
                 throw CLIError("cache administration is not available")

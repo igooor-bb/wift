@@ -9,7 +9,10 @@ import Foundation
 struct CacheLock: ~Copyable {
     private var fileDescriptor: Int32 = -1
 
-    init(url: URL) throws {
+    init(
+        url: URL,
+        onContention: () -> Void = {}
+    ) throws {
         let descriptor = url.path.withCString { path in
             open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
         }
@@ -25,7 +28,15 @@ struct CacheLock: ~Copyable {
             close(descriptor)
             throw WiftError("cache lock is not an owner-controlled regular file")
         }
-        guard flock(descriptor, LOCK_EX) == 0 else {
+        let immediateResult = flock(descriptor, LOCK_EX | LOCK_NB)
+        if immediateResult != 0, errno == EWOULDBLOCK || errno == EAGAIN {
+            onContention()
+            guard flock(descriptor, LOCK_EX) == 0 else {
+                let description = Self.currentErrorDescription()
+                close(descriptor)
+                throw WiftError("unable to acquire cache lock: \(description)")
+            }
+        } else if immediateResult != 0 {
             let description = Self.currentErrorDescription()
             close(descriptor)
             throw WiftError("unable to acquire cache lock: \(description)")

@@ -36,6 +36,28 @@ import Testing
         }
     }
 
+    @Test func verboseSeparatesDiagnosticsFromScriptOutput() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory)
+            let script = try fixture.writeScript("print(\"hello\")")
+
+            let miss = try fixture.run(script, wiftArguments: ["--verbose"])
+            #expect(miss.standardOutput == "hello\n")
+            #expect(miss.standardError.contains("wift: cache miss\n"))
+            #expect(miss.standardError.contains("wift: compiling\n"))
+            #expect(miss.standardError.contains("wift: exec\n"))
+
+            let hit = try fixture.run(script, wiftArguments: ["--verbose"])
+            #expect(hit.standardOutput == "hello\n")
+            #expect(hit.standardError.contains("wift: cache hit\n"))
+            #expect(!hit.standardError.contains("wift: compiling\n"))
+
+            let silent = try fixture.run(script)
+            #expect(silent.standardOutput == "hello\n")
+            #expect(silent.standardError.isEmpty)
+        }
+    }
+
     @Test func preservesArgumentsEnvironmentAndWorkingDirectory() throws {
         try withTemporaryDirectory { directory in
             let fixture = try Fixture(directory: directory)
@@ -176,6 +198,7 @@ private struct Fixture {
     func run(
         _ script: URL,
         arguments: [String] = [],
+        wiftArguments: [String] = [],
         environment additions: [String: String] = [:],
         currentDirectory: URL? = nil
     ) throws -> CommandResult {
@@ -183,7 +206,7 @@ private struct Fixture {
         environment.merge(additions) { _, new in new }
         return try Self.runProcess(
             executable: wiftExecutable,
-            arguments: [script.path] + arguments,
+            arguments: wiftArguments + [script.path] + arguments,
             environment: environment,
             currentDirectory: currentDirectory
         )
