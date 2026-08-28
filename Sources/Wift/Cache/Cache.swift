@@ -7,6 +7,8 @@ import Foundation
 #endif
 
 struct Cache {
+    private static let markerContents = Data("wift-cache-v1\n".utf8)
+
     let root: URL
     let fileManager: FileManager
 
@@ -20,6 +22,13 @@ struct Cache {
 
     var locksDirectory: URL {
         root.appendingPathComponent("locks", isDirectory: true)
+    }
+
+    var accessLockURL: URL {
+        root.deletingLastPathComponent().appendingPathComponent(
+            ".wift-\(root.lastPathComponent).lock",
+            isDirectory: false
+        )
     }
 
     private var stagingDirectory: URL {
@@ -56,6 +65,7 @@ struct Cache {
             for directory in [root, executablesDirectory, moduleCacheDirectory, locksDirectory, stagingDirectory] {
                 try createPrivateDirectory(directory)
             }
+            try ensureManagedMarker()
         } catch {
             if let error = error as? WiftError {
                 throw error
@@ -141,6 +151,68 @@ struct Cache {
         try? fileManager.removeItem(at: entry)
     }
 
+    func withAccessLock<T>(
+        mode: CacheLock.Mode,
+        _ body: () throws -> T
+    ) throws -> T {
+        do {
+            try fileManager.createDirectory(
+                at: accessLockURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+        } catch {
+            throw WiftError("unable to create cache lock directory: \(error.localizedDescription)")
+        }
+        let lock = try CacheLock(url: accessLockURL, mode: mode)
+        return try lock.whileHeld(body)
+    }
+
+    func removeEntry(for key: CacheKey) throws -> Bool {
+        let entry = entryDirectory(for: key)
+        guard fileManager.fileExists(atPath: entry.path) else {
+            return false
+        }
+        do {
+            try fileManager.removeItem(at: entry)
+            return true
+        } catch {
+            throw WiftError("unable to remove cache entry: \(error.localizedDescription)")
+        }
+    }
+
+    func removeAll() throws {
+        let sharedCacheDirectory: URL
+        do {
+            sharedCacheDirectory = try fileManager.url(
+                for: .cachesDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: false
+            )
+        } catch {
+            throw WiftError("unable to locate cache directory: \(error.localizedDescription)")
+        }
+        try CacheCleanupSafety.validate(
+            root: root,
+            homeDirectory: fileManager.homeDirectoryForCurrentUser,
+            sharedCacheDirectory: sharedCacheDirectory
+        )
+        guard fileManager.fileExists(atPath: root.path) else {
+            return
+        }
+        try validatePrivateDirectory(root)
+
+        let defaultRoot = sharedCacheDirectory.appendingPathComponent("wift", isDirectory: true)
+        guard rootsResolveToSamePath(root, defaultRoot) || hasValidManagedMarker() else {
+            throw WiftError("refusing to clean unmanaged cache path: \(root.path)")
+        }
+        do {
+            try fileManager.removeItem(at: root)
+        } catch {
+            throw WiftError("unable to clean cache: \(error.localizedDescription)")
+        }
+    }
+
     func statistics() throws -> CacheStatistics {
         try CacheStatistics(
             executableCount: validExecutableCount(),
@@ -170,6 +242,40 @@ struct Cache {
             )
         }
         try validatePrivateDirectory(directory)
+    }
+
+    private func ensureManagedMarker() throws {
+        let marker = root.appendingPathComponent(".wift-cache", isDirectory: false)
+        if fileManager.fileExists(atPath: marker.path) {
+            guard hasValidManagedMarker() else {
+                throw WiftError("invalid cache ownership marker: \(marker.path)")
+            }
+            return
+        }
+        do {
+            try Self.markerContents.write(to: marker, options: .atomic)
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: marker.path)
+        } catch {
+            throw WiftError("unable to create cache ownership marker: \(error.localizedDescription)")
+        }
+    }
+
+    private func hasValidManagedMarker() -> Bool {
+        let marker = root.appendingPathComponent(".wift-cache", isDirectory: false)
+        guard let status = fileStatus(at: marker),
+              status.st_uid == geteuid(),
+              status.st_mode & S_IFMT == S_IFREG,
+              status.st_mode & (S_IWGRP | S_IWOTH) == 0,
+              let contents = try? Data(contentsOf: marker)
+        else {
+            return false
+        }
+        return contents == Self.markerContents
+    }
+
+    private func rootsResolveToSamePath(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.standardizedFileURL.resolvingSymlinksInPath().path
+            == rhs.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     private func fileStatus(at url: URL) -> stat? {

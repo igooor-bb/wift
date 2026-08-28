@@ -24,6 +24,15 @@ struct Runner {
             environment: environment,
             fileManager: fileManager
         )
+        try context.cache.withAccessLock(mode: .shared) {
+            try run(context: context, arguments: arguments)
+        }
+    }
+
+    private func run(
+        context: ScriptContext,
+        arguments: [String]
+    ) throws -> Never {
         let script = context.script
         let cache = context.cache
         try cache.prepare()

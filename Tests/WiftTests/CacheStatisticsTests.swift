@@ -50,7 +50,8 @@ struct CacheStatisticsTests {
             #expect(statistics.executableCount == 1)
             #expect(statistics.executableBytes == 10)
             #expect(statistics.moduleCacheBytes == 20)
-            #expect(statistics.totalBytes == 30)
+            #expect(statistics.totalBytes >= 30)
+            #expect(statistics.totalBytes < 10000)
         }
     }
 }

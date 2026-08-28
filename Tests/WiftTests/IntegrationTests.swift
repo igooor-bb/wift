@@ -98,6 +98,45 @@ import Testing
         }
     }
 
+    @Test func cleansCurrentEntryAndRecompiles() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory, instrumentCompiler: true)
+            let script = try fixture.writeScript("print(\"clean\")")
+            _ = try fixture.run(script)
+            #expect(try fixture.compilationCount() == 1)
+
+            let clean = try fixture.runWift(["cache", "clean", script.path])
+            #expect(clean.exitCode == 0)
+            #expect(clean.standardOutput.contains("Removed cache entry for "))
+            #expect(try fixture.cachedExecutables().isEmpty)
+
+            _ = try fixture.run(script)
+            #expect(try fixture.compilationCount() == 2)
+        }
+    }
+
+    @Test func cleansEntireCache() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory)
+            let script = try fixture.writeScript("print(\"clean all\")")
+            _ = try fixture.run(script)
+            let abandoned = fixture.cacheDirectory.appendingPathComponent("staging/abandoned/file")
+            try FileManager.default.createDirectory(
+                at: abandoned.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try Data("temporary".utf8).write(to: abandoned)
+
+            let clean = try fixture.runWift(["cache", "clean"])
+            #expect(clean.exitCode == 0)
+            #expect(!FileManager.default.fileExists(atPath: fixture.cacheDirectory.path))
+
+            let summary = try fixture.runWift(["cache"])
+            #expect(summary.standardOutput.contains("Executables: 0\n"))
+            #expect(summary.standardOutput.contains("Total: 0 B\n"))
+        }
+    }
+
     @Test func preservesArgumentsEnvironmentAndWorkingDirectory() throws {
         try withTemporaryDirectory { directory in
             let fixture = try Fixture(directory: directory)

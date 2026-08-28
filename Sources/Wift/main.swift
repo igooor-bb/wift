@@ -46,8 +46,8 @@ struct WiftCommand: ParsableCommand {
             case let .cacheInfo(scriptPath):
                 try CacheAdministration().printInfo(scriptPath: scriptPath)
 
-            case .cacheClean:
-                throw CLIError("cache administration is not available")
+            case let .cacheClean(scriptPath):
+                try CacheAdministration().clean(scriptPath: scriptPath)
             }
         } catch let failure as CompilerFailure {
             throw ExitCode(failure.exitCode)
