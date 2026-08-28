@@ -12,6 +12,7 @@ import Testing
             #expect(first.exitCode == 0)
             #expect(first.standardOutput == "hello\n")
             let executable = try #require(fixture.cachedExecutables().only)
+            #expect(try fixture.cachedMetadata().count == 1)
             let oldDate = Date(timeIntervalSinceReferenceDate: 1)
             try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: executable.path)
 
@@ -41,6 +42,7 @@ import Testing
             let script = try fixture.writeScript(
                 """
                 import Foundation
+                print(CommandLine.arguments[0])
                 print(CommandLine.arguments.dropFirst().joined(separator: ","))
                 print(ProcessInfo.processInfo.environment["WIFT_FIXTURE"] ?? "missing")
                 print(FileManager.default.fileExists(atPath: "cwd-marker"))
@@ -58,7 +60,19 @@ import Testing
             )
 
             #expect(result.exitCode == 0)
-            #expect(result.standardOutput == "one,--two,three\nvisible\ntrue\n")
+            let canonicalScriptPath = try Script.resolve(script.path).path
+            #expect(result.standardOutput == "\(canonicalScriptPath)\none,--two,three\nvisible\ntrue\n")
+        }
+    }
+
+    @Test func reportsMissingScript() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory)
+            let missing = directory.appendingPathComponent("missing.swift")
+            let result = try fixture.run(missing)
+
+            #expect(result.exitCode == 1)
+            #expect(result.standardError == "wift: script not found: \(missing.path)\n")
         }
     }
 
@@ -193,6 +207,14 @@ private struct Fixture {
     }
 
     func cachedExecutables() throws -> [URL] {
+        try cachedFiles(named: "executable")
+    }
+
+    func cachedMetadata() throws -> [URL] {
+        try cachedFiles(named: "metadata.json")
+    }
+
+    private func cachedFiles(named name: String) throws -> [URL] {
         let root = cacheDirectory.appendingPathComponent("executables", isDirectory: true)
         guard FileManager.default.fileExists(atPath: root.path) else {
             return []
@@ -205,7 +227,7 @@ private struct Fixture {
             )
         )
         return enumerator.compactMap { item in
-            guard let url = item as? URL, url.lastPathComponent == "executable" else {
+            guard let url = item as? URL, url.lastPathComponent == name else {
                 return nil
             }
             return url
