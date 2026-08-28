@@ -17,30 +17,22 @@ struct Toolchain: Equatable {
         guard versionOutput.exitCode == 0 else {
             throw WiftError("unable to identify swiftc")
         }
-        let version = String(decoding: versionOutput.standardOutput, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let sdkPath = resolveSDKPath()
-        var targetArguments = ["-print-target-info"]
-        if let sdkPath {
-            targetArguments += ["-sdk", sdkPath]
+        guard let version = String(data: versionOutput.standardOutput, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !version.isEmpty
+        else {
+            throw WiftError("unable to decode swiftc version")
         }
-        let targetOutput = try ProcessExecution.capture(executable: compilerPath, arguments: targetArguments)
-        guard targetOutput.exitCode == 0 else {
+
+        guard let targetLine = version.split(separator: "\n").first(where: { $0.hasPrefix("Target: ") }) else {
             throw WiftError("unable to resolve Swift target information")
         }
-
-        let targetInfo: TargetInfo
-        do {
-            targetInfo = try JSONDecoder().decode(TargetInfo.self, from: targetOutput.standardOutput)
-        } catch {
-            throw WiftError("unable to decode Swift target information: \(error.localizedDescription)")
-        }
+        let target = targetLine.dropFirst("Target: ".count).trimmingCharacters(in: .whitespaces)
+        let sdkPath = resolveSDKPath(environment: environment)
 
         return Toolchain(
             compilerPath: compilerPath,
             compilerVersion: version,
-            target: targetInfo.target.triple,
+            target: target,
             sdkPath: sdkPath
         )
     }
@@ -53,8 +45,11 @@ struct Toolchain: Equatable {
         return arguments
     }
 
-    private static func resolveSDKPath() -> String? {
+    private static func resolveSDKPath(environment: [String: String]) -> String? {
         #if os(macOS)
+            if let sdkRoot = environment["SDKROOT"], !sdkRoot.isEmpty {
+                return URL(fileURLWithPath: sdkRoot).standardizedFileURL.resolvingSymlinksInPath().path
+            }
             guard let output = try? ProcessExecution.capture(
                 executable: "/usr/bin/xcrun",
                 arguments: ["--sdk", "macosx", "--show-sdk-path"]
@@ -62,19 +57,14 @@ struct Toolchain: Equatable {
                 return nil
             }
 
-            let path = String(decoding: output.standardOutput, as: UTF8.self)
+            guard let path = String(data: output.standardOutput, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            else {
+                return nil
+            }
             return path.isEmpty ? nil : path
         #else
             return nil
         #endif
     }
-}
-
-private struct TargetInfo: Decodable {
-    struct Target: Decodable {
-        let triple: String
-    }
-
-    let target: Target
 }
