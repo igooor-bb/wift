@@ -4,7 +4,9 @@ struct ScriptContext {
     let script: Script
     let cache: Cache
     let toolchain: Toolchain
+    let moduleCacheContext: ModuleCacheContext
     let supportModule: SupportModule
+    let actionArguments: [String]
     let compilerArguments: [String]
     let key: CacheKey
 
@@ -16,23 +18,32 @@ struct ScriptContext {
         let script = try Script.resolve(scriptPath, fileManager: fileManager)
         let cache = try Cache(environment: environment, fileManager: fileManager)
         let toolchain = try Toolchain.resolve(environment: environment)
-        let supportModule = SupportModule.resolve(toolchain: toolchain, cache: cache)
-        let compilerArguments = toolchain.compilerArguments(moduleCachePath: cache.moduleCacheDirectory.path) + [
+        let moduleCacheContext = toolchain.moduleCacheContext(moduleCachePath: cache.moduleCacheDirectory.path)
+        let supportModule = SupportModule.resolve(
+            toolchain: toolchain,
+            moduleCacheContext: moduleCacheContext,
+            cache: cache
+        )
+        let actionArguments = [
             "-I",
             supportModule.directory.path,
             supportModule.objectURL.path,
         ]
+        let compilerArguments = moduleCacheContext.arguments + actionArguments
         let key = FingerprintInput(
             script: script,
             toolchain: toolchain,
-            compilerArguments: compilerArguments,
+            moduleCacheContext: moduleCacheContext,
+            actionArguments: actionArguments,
             supportFingerprint: supportModule.fingerprint
         ).cacheKey()
         return ScriptContext(
             script: script,
             cache: cache,
             toolchain: toolchain,
+            moduleCacheContext: moduleCacheContext,
             supportModule: supportModule,
+            actionArguments: actionArguments,
             compilerArguments: compilerArguments,
             key: key
         )

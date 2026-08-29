@@ -1,5 +1,9 @@
 import Foundation
 
+struct ModuleCacheContext: Equatable {
+    let arguments: [String]
+}
+
 struct Toolchain: Equatable {
     let compilerPath: String
     let compilerVersion: String
@@ -37,7 +41,7 @@ struct Toolchain: Equatable {
         )
     }
 
-    func compilerArguments(moduleCachePath: String) -> [String] {
+    func moduleCacheContext(moduleCachePath: String) -> ModuleCacheContext {
         var arguments = [
             "-module-cache-path",
             moduleCachePath,
@@ -47,7 +51,7 @@ struct Toolchain: Equatable {
         if let sdkPath {
             arguments += ["-sdk", sdkPath]
         }
-        return arguments
+        return ModuleCacheContext(arguments: arguments)
     }
 
     private static func resolveSDKPath(environment: [String: String]) -> String? {

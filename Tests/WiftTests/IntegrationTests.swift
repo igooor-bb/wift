@@ -278,60 +278,21 @@ import Testing
         }
     }
 
-    @Test func importsWiftAndUsesProcessHelpers() throws {
-        try withTemporaryDirectory { directory in
-            let fixture = try Fixture(directory: directory)
-            let script = try fixture.writeScript(
-                """
-                import Foundation
-                import Wift
-
-                print(try run("/bin/sh", "-c", "exit 0"))
-                print(try run("/bin/sh", arguments: ["-c", "exit 0"]))
-                print(try run("/bin/sh", "-c", "exit 9"))
-                do {
-                    try checkRun("/bin/sh", "-c", "exit 7")
-                } catch let error as CommandFailure {
-                    print("failure=\\(error.executable),\\(error.arguments.joined(separator: ",")),\\(error.status)")
-                }
-                let output = try capture("/bin/sh", "-c", "printf 'out\\n\\n'; printf 'err\\n' >&2")
-                print("capture=\\(output.status):\\(output.stdout.debugDescription):\\(output.stderr.debugDescription)")
-                print("which=\\(which("sh") != nil),\\(which("definitely-not-a-wift-command") == nil),\\(which("/bin/sh") != nil)")
-                print("path=\\(Script.path.path)")
-                print("directory=\\(Script.directory.path)")
-                """
-            )
-
-            let result = try fixture.run(script)
-            let canonicalPath = try Script.resolve(script.path).path
-            #expect(result.exitCode == 0, Comment(rawValue: result.standardError))
-            #expect(result.standardOutput.contains("0\n0\n9\n"))
-            #expect(result.standardOutput.contains("failure=/bin/sh,-c,exit 7,7\n"))
-            #expect(result.standardOutput.contains("capture=0:\"out\\n\\n\":\"err\\n\"\n"))
-            #expect(result.standardOutput.contains("which=true,true,true\n"))
-            #expect(result.standardOutput.contains("path=\(canonicalPath)\n"))
-            #expect(result.standardOutput.contains("directory=\(directory.path)\n"))
-        }
-    }
-
-    @Test func capturesLargeStdoutAndStderrWithoutDeadlock() throws {
+    @Test func importsWiftAndUsesCommandAPI() throws {
         try withTemporaryDirectory { directory in
             let fixture = try Fixture(directory: directory)
             let script = try fixture.writeScript(
                 """
                 import Wift
-                let output = try capture(
-                    "/bin/sh",
-                    "-c",
-                    "yes o | head -c 200000 & yes e | head -c 200000 >&2 & wait"
-                )
-                print("\\(output.status),\\(output.stdout.utf8.count),\\(output.stderr.utf8.count)")
+
+                print(try cmd("/bin/echo", "embedded").text())
+                print(Script.arguments.joined(separator: ","))
                 """
             )
 
-            let result = try fixture.run(script)
+            let result = try fixture.run(script, arguments: ["one", "--two"])
             #expect(result.exitCode == 0, Comment(rawValue: result.standardError))
-            #expect(result.standardOutput == "0,200000,200000\n")
+            #expect(result.standardOutput == "embedded\none,--two\n")
         }
     }
 
@@ -355,9 +316,11 @@ import Testing
     @Test func reusesSupportCacheAcrossScriptVariants() throws {
         try withTemporaryDirectory { directory in
             let fixture = try Fixture(directory: directory, instrumentCompiler: true)
-            let script = try fixture.writeScript("import Wift\nprint(which(\"sh\") != nil)")
+            let script = try fixture.writeScript("import Wift\nprint(try cmd(\"/bin/echo\", \"one\").text())")
             let first = try fixture.run(script, wiftArguments: ["--verbose"])
-            try Data("import Wift\nprint(which(\"swiftc\") != nil)".utf8).write(to: script)
+            try Data(
+                "import Wift\nprint(try cmd(\"/bin/echo\", \"two\").pipe(to: cmd(\"/usr/bin/sort\")).text())".utf8
+            ).write(to: script)
             let second = try fixture.run(script, wiftArguments: ["--verbose"])
 
             #expect(first.standardError.contains("wift: support cache miss\n"))

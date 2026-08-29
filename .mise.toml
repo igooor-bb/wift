@@ -22,6 +22,10 @@ run = "swift test"
 description = "Run a Swift script with wift"
 run = "swift run wift"
 
+[tasks."support-size"]
+description = "Report built-in library and compiler cache context sizes"
+run = "sh Scripts/support-size.sh"
+
 [tasks.install]
 description = "Install wift to ~/.local/bin"
 run = """

@@ -5,15 +5,20 @@ struct SupportModule: Equatable {
     static let schemaVersion = "1"
     static let moduleName = "Wift"
     static let source: String = {
-        guard let source = String(bytes: PackageResources.Wift_swift, encoding: .utf8) else {
+        guard let source = String(bytes: EmbeddedWiftLibrarySource.bytes, encoding: .utf8) else {
             preconditionFailure("embedded Wift library source is not UTF-8")
         }
         return source
     }()
 
     let fingerprint: CacheKey
-    let compilerArguments: [String]
+    let moduleCacheContext: ModuleCacheContext
+    let actionArguments: [String]
     let directory: URL
+
+    var compilerArguments: [String] {
+        moduleCacheContext.arguments + actionArguments
+    }
 
     var sourceURL: URL {
         directory.appendingPathComponent("Wift.swift", isDirectory: false)
@@ -31,8 +36,12 @@ struct SupportModule: Equatable {
         directory.appendingPathComponent("metadata.json", isDirectory: false)
     }
 
-    static func resolve(toolchain: Toolchain, cache: Cache) -> SupportModule {
-        let compilerArguments = toolchain.compilerArguments(moduleCachePath: cache.moduleCacheDirectory.path) + [
+    static func resolve(
+        toolchain: Toolchain,
+        moduleCacheContext: ModuleCacheContext,
+        cache: Cache
+    ) -> SupportModule {
+        let actionArguments = [
             "-parse-as-library",
             "-module-name",
             moduleName,
@@ -44,16 +53,17 @@ struct SupportModule: Equatable {
             Data(source.utf8),
             Data(toolchain.compilerPath.utf8),
             Data(toolchain.compilerVersion.utf8),
-            Data(toolchain.target.utf8),
-            Data((toolchain.sdkPath ?? "").utf8),
-            Data(String(compilerArguments.count).utf8),
-        ] + compilerArguments.map { Data($0.utf8) }
+            Data(String(moduleCacheContext.arguments.count).utf8),
+        ] + moduleCacheContext.arguments.map { Data($0.utf8) } + [
+            Data(String(actionArguments.count).utf8),
+        ] + actionArguments.map { Data($0.utf8) }
         let fingerprint = CacheKey(
             rawValue: SHA256.hexDigest(of: FingerprintSerializer.serialize(fields))
         )
         return SupportModule(
             fingerprint: fingerprint,
-            compilerArguments: compilerArguments,
+            moduleCacheContext: moduleCacheContext,
+            actionArguments: actionArguments,
             directory: cache.supportDirectory.appendingPathComponent(fingerprint.rawValue, isDirectory: true)
         )
     }
@@ -61,7 +71,8 @@ struct SupportModule: Equatable {
     func inDirectory(_ directory: URL) -> SupportModule {
         SupportModule(
             fingerprint: fingerprint,
-            compilerArguments: compilerArguments,
+            moduleCacheContext: moduleCacheContext,
+            actionArguments: actionArguments,
             directory: directory
         )
     }

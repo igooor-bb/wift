@@ -35,8 +35,36 @@ struct CacheKeyTests {
         #expect(makeInput().cacheKey() != makeInput(toolchain: other).cacheKey())
     }
 
-    @Test func compilerArgumentsChangeInvalidatesFingerprint() {
-        #expect(makeInput(arguments: ["-Onone"]).cacheKey() != makeInput(arguments: ["-O"]).cacheKey())
+    @Test func moduleCacheContextChangeInvalidatesFingerprint() {
+        #expect(
+            makeInput(contextArguments: ["-Onone"]).cacheKey()
+                != makeInput(contextArguments: ["-O"]).cacheKey()
+        )
+    }
+
+    @Test func actionArgumentsChangeInvalidatesFingerprint() {
+        #expect(
+            makeInput(actionArguments: ["support-a.o"]).cacheKey()
+                != makeInput(actionArguments: ["support-b.o"]).cacheKey()
+        )
+    }
+
+    @Test func supportAndScriptShareModuleCacheContext() throws {
+        try withTemporaryDirectory { directory in
+            let cache = try Cache(
+                environment: ["WIFT_CACHE_DIR": directory.appendingPathComponent("cache").path],
+                fileManager: .default
+            )
+            let context = toolchain.moduleCacheContext(moduleCachePath: cache.moduleCacheDirectory.path)
+            let support = SupportModule.resolve(
+                toolchain: toolchain,
+                moduleCacheContext: context,
+                cache: cache
+            )
+
+            #expect(support.moduleCacheContext == context)
+            #expect(support.compilerArguments.starts(with: context.arguments))
+        }
     }
 
     @Test func supportModuleChangeInvalidatesFingerprint() {
@@ -57,13 +85,15 @@ struct CacheKeyTests {
         source: String = "print(1)",
         path: String = "/scripts/example.swift",
         toolchain: Toolchain? = nil,
-        arguments: [String] = ["-module-cache-path", "/cache/modules"],
+        contextArguments: [String] = ["-module-cache-path", "/cache/modules"],
+        actionArguments: [String] = ["-I", "/cache/support", "/cache/support/Wift.o"],
         supportFingerprint: String = "support"
     ) -> FingerprintInput {
         FingerprintInput(
             script: Script(path: path, contents: Data(source.utf8)),
             toolchain: toolchain ?? self.toolchain,
-            compilerArguments: arguments,
+            moduleCacheContext: ModuleCacheContext(arguments: contextArguments),
+            actionArguments: actionArguments,
             supportFingerprint: CacheKey(rawValue: supportFingerprint)
         )
     }
