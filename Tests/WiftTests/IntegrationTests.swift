@@ -350,6 +350,7 @@ import Testing
             #expect(second.standardError.contains("wift: support module: "))
             #expect(try fixture.supportCompilationCount() == 1)
             #expect(try fixture.compilationCount() == 2)
+            #expect(try fixture.compilerModuleContextDirectories().count == 1)
         }
     }
 
@@ -573,6 +574,20 @@ private struct Fixture {
             at: root,
             includingPropertiesForKeys: [.isDirectoryKey]
         )
+    }
+
+    func compilerModuleContextDirectories() throws -> [URL] {
+        let root = cacheDirectory.appendingPathComponent("module-cache", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: root.path) else {
+            return []
+        }
+        let contents = try FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )
+        return try contents.filter { url in
+            try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+        }
     }
 
     private func cachedFiles(named name: String) throws -> [URL] {

@@ -34,7 +34,6 @@ struct SupportModule: Equatable {
     static func resolve(toolchain: Toolchain, cache: Cache) -> SupportModule {
         let compilerArguments = toolchain.compilerArguments(moduleCachePath: cache.moduleCacheDirectory.path) + [
             "-parse-as-library",
-            "-O",
             "-module-name",
             moduleName,
             "-emit-module",
