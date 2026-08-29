@@ -12,7 +12,26 @@ struct SwiftCompiler {
         compilerArguments: [String],
         outputURL: URL
     ) throws {
-        try invoke(arguments: compilerArguments + [script.path, "-o", outputURL.path])
+        let stagedSourceURL: URL? = if script.needsStagedSwiftSource {
+            outputURL.deletingLastPathComponent().appendingPathComponent("script.swift", isDirectory: false)
+        } else {
+            nil
+        }
+        if let stagedSourceURL {
+            do {
+                try script.contents.write(to: stagedSourceURL, options: .atomic)
+            } catch {
+                throw WiftError("unable to stage script source: \(error.localizedDescription)")
+            }
+        }
+        defer {
+            if let stagedSourceURL {
+                try? FileManager.default.removeItem(at: stagedSourceURL)
+            }
+        }
+
+        let sourcePath = stagedSourceURL?.path ?? script.path
+        try invoke(arguments: compilerArguments + [sourcePath, "-o", outputURL.path])
     }
 
     func compileSupportModule(_ module: SupportModule) throws {

@@ -27,6 +27,8 @@ chmod +x script.swift
 ./script.swift
 ```
 
+The shebang also allows extensionless script names such as `scripts/add`. When a shebang script does not have a `.swift` extension, `wift` stages its verified contents under a Swift filename for compilation while preserving the original canonical path as `argv[0]` and `Script.path`.
+
 ## Built-in scripting library
 
 Every script can import the built-in `Wift` module without a `Package.swift` or extra installation files:

@@ -235,6 +235,21 @@ import Testing
         }
     }
 
+    @Test func supportsExtensionlessShebangExecution() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory)
+            let script = try fixture.writeScript(
+                "#!/usr/bin/env wift\nimport Wift\nprint(Script.path.path)",
+                name: "add",
+                executable: true
+            )
+            let result = try fixture.runDirectly(script)
+
+            #expect(result.exitCode == 0, Comment(rawValue: result.standardError))
+            #expect(try result.standardOutput == "\(Script.resolve(script.path).path)\n")
+        }
+    }
+
     @Test func compileFailureDoesNotCreateACacheEntry() throws {
         try withTemporaryDirectory { directory in
             let fixture = try Fixture(directory: directory)
@@ -478,8 +493,12 @@ private struct Fixture {
         self.environment = environment
     }
 
-    func writeScript(_ source: String, executable: Bool = false) throws -> URL {
-        let script = directory.appendingPathComponent("script.swift")
+    func writeScript(
+        _ source: String,
+        name: String = "script.swift",
+        executable: Bool = false
+    ) throws -> URL {
+        let script = directory.appendingPathComponent(name)
         try Data(source.utf8).write(to: script)
         if executable {
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
