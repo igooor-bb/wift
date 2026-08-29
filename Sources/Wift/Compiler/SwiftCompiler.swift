@@ -12,9 +12,25 @@ struct SwiftCompiler {
         compilerArguments: [String],
         outputURL: URL
     ) throws {
+        try invoke(arguments: compilerArguments + [script.path, "-o", outputURL.path])
+    }
+
+    func compileSupportModule(_ module: SupportModule) throws {
+        try invoke(
+            arguments: module.compilerArguments + [
+                "-emit-module-path",
+                module.moduleURL.path,
+                module.sourceURL.path,
+                "-o",
+                module.objectURL.path,
+            ]
+        )
+    }
+
+    private func invoke(arguments: [String]) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: toolchain.compilerPath)
-        process.arguments = compilerArguments + [script.path, "-o", outputURL.path]
+        process.arguments = arguments
         process.standardInput = FileHandle.standardInput
         process.standardOutput = FileHandle.standardOutput
         process.standardError = FileHandle.standardError

@@ -19,6 +19,7 @@ struct FingerprintInput {
     let script: Script
     let toolchain: Toolchain
     let compilerArguments: [String]
+    let supportFingerprint: CacheKey
 
     func cacheKey() -> CacheKey {
         var fields = [
@@ -29,6 +30,7 @@ struct FingerprintInput {
             Data(toolchain.compilerVersion.utf8),
             Data(toolchain.target.utf8),
             Data((toolchain.sdkPath ?? "").utf8),
+            Data(supportFingerprint.rawValue.utf8),
             Data(String(compilerArguments.count).utf8),
         ]
         fields.append(contentsOf: compilerArguments.map { Data($0.utf8) })

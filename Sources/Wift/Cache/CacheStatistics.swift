@@ -4,6 +4,7 @@ struct CacheStatistics: Equatable {
     let executableCount: Int
     let executableBytes: UInt64
     let moduleCacheBytes: UInt64
+    let supportModuleBytes: UInt64
     let totalBytes: UInt64
 }
 

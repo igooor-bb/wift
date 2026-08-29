@@ -10,6 +10,7 @@ struct CacheMetadata: Codable, Equatable {
     let compilerVersion: String
     let target: String
     let sdk: String?
+    let supportFingerprint: String
     let compilerArguments: [String]
     let createdAt: Date
 
@@ -17,6 +18,7 @@ struct CacheMetadata: Codable, Equatable {
         script: Script,
         key: CacheKey,
         toolchain: Toolchain,
+        supportFingerprint: CacheKey,
         compilerArguments: [String],
         createdAt: Date = Date()
     ) {
@@ -28,6 +30,7 @@ struct CacheMetadata: Codable, Equatable {
         compilerVersion = toolchain.compilerVersion
         target = toolchain.target
         sdk = toolchain.sdkPath
+        self.supportFingerprint = supportFingerprint.rawValue
         self.compilerArguments = compilerArguments
         self.createdAt = createdAt
     }

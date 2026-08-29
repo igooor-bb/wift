@@ -41,9 +41,11 @@ struct Runner {
         let key = context.key
         diagnostics.log("script: \(script.path)")
         diagnostics.log("compiler: \(toolchain.compilerPath)")
+        diagnostics.log("support module: \(context.supportModule.directory.path)")
         diagnostics.log("cache key: \(key.rawValue)")
 
         if let executable = cache.cachedExecutable(for: key) {
+            diagnostics.log(cache.cachedSupportModule(context.supportModule) == nil ? "support cache miss" : "support cache hit")
             diagnostics.log("cache hit")
             diagnostics.log("executable: \(executable.path)")
             diagnostics.log("exec")
@@ -55,6 +57,7 @@ struct Runner {
         }
 
         diagnostics.log("cache miss")
+        try prepareSupportModule(context.supportModule, cache: cache, compiler: SwiftCompiler(toolchain: toolchain))
         let executable: URL
         let lock = try CacheLock(
             url: cache.lockURL(for: key),
@@ -80,6 +83,7 @@ struct Runner {
                 script: script,
                 key: key,
                 toolchain: toolchain,
+                supportFingerprint: context.supportModule.fingerprint,
                 compilerArguments: compilerArguments
             ).write(to: stagingEntry.appendingPathComponent("metadata.json", isDirectory: false))
             try cache.install(stagingEntry: stagingEntry, for: key)
@@ -93,5 +97,45 @@ struct Runner {
             scriptPath: script.path,
             arguments: arguments
         )
+    }
+
+    private func prepareSupportModule(
+        _ module: SupportModule,
+        cache: Cache,
+        compiler: SwiftCompiler
+    ) throws {
+        if cache.cachedSupportModule(module) != nil {
+            diagnostics.log("support cache hit")
+            return
+        }
+
+        diagnostics.log("support cache miss")
+        let lock = try CacheLock(
+            url: cache.supportLockURL(for: module.fingerprint),
+            onContention: { diagnostics.log("waiting for support cache lock") }
+        )
+        try lock.whileHeld {
+            if cache.cachedSupportModule(module) != nil {
+                diagnostics.log("support cache populated by another process")
+                return
+            }
+
+            try cache.removeInvalidSupportModuleIfPresent(module)
+            let stagingEntry = try cache.makeSupportStagingEntry(for: module.fingerprint)
+            defer { cache.removeStagingEntryIfPresent(stagingEntry) }
+            let stagedModule = module.inDirectory(stagingEntry)
+            do {
+                try Data(SupportModule.source.utf8).write(to: stagedModule.sourceURL, options: .atomic)
+            } catch {
+                throw WiftError("unable to stage support module source: \(error.localizedDescription)")
+            }
+            try compiler.compileSupportModule(stagedModule)
+            do {
+                try SupportModuleMetadata(module: stagedModule).write(to: stagedModule.metadataURL)
+            } catch {
+                throw WiftError("unable to write support module metadata: \(error.localizedDescription)")
+            }
+            try cache.installSupportModule(stagingEntry: stagingEntry, module: module)
+        }
     }
 }

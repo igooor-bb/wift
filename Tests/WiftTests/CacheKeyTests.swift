@@ -39,6 +39,13 @@ struct CacheKeyTests {
         #expect(makeInput(arguments: ["-Onone"]).cacheKey() != makeInput(arguments: ["-O"]).cacheKey())
     }
 
+    @Test func supportModuleChangeInvalidatesFingerprint() {
+        #expect(
+            makeInput(supportFingerprint: "support-a").cacheKey()
+                != makeInput(supportFingerprint: "support-b").cacheKey()
+        )
+    }
+
     @Test func serializationIsUnambiguous() {
         let first = FingerprintSerializer.serialize([Data("ab".utf8), Data("c".utf8)])
         let second = FingerprintSerializer.serialize([Data("a".utf8), Data("bc".utf8)])
@@ -50,12 +57,14 @@ struct CacheKeyTests {
         source: String = "print(1)",
         path: String = "/scripts/example.swift",
         toolchain: Toolchain? = nil,
-        arguments: [String] = ["-module-cache-path", "/cache/modules"]
+        arguments: [String] = ["-module-cache-path", "/cache/modules"],
+        supportFingerprint: String = "support"
     ) -> FingerprintInput {
         FingerprintInput(
             script: Script(path: path, contents: Data(source.utf8)),
             toolchain: toolchain ?? self.toolchain,
-            compilerArguments: arguments
+            compilerArguments: arguments,
+            supportFingerprint: CacheKey(rawValue: supportFingerprint)
         )
     }
 }

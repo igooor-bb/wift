@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct CacheAdministration {
@@ -31,6 +32,7 @@ struct CacheAdministration {
             Executables: \(statistics.executableCount)
             Executable cache: \(ByteSizeFormatter.string(fromByteCount: statistics.executableBytes))
             Module cache: \(ByteSizeFormatter.string(fromByteCount: statistics.moduleCacheBytes))
+            Support cache: \(ByteSizeFormatter.string(fromByteCount: statistics.supportModuleBytes))
             Total: \(ByteSizeFormatter.string(fromByteCount: statistics.totalBytes))
 
             """
@@ -44,23 +46,34 @@ struct CacheAdministration {
             fileManager: fileManager
         )
         let output = try context.cache.withAccessLock(mode: .shared) {
-            let executable = context.cache.cachedExecutable(for: context.key)
+            let entries = try context.cache.metadataEntries()
+                .filter { $0.metadata.sourcePath == context.script.path }
+                .sorted { $0.metadata.createdAt > $1.metadata.createdAt }
+            let activeExecutable = context.cache.cachedExecutable(for: context.key)
             var lines = [
                 "Script: \(context.script.path)",
-                "Cache status: \(executable == nil ? "miss" : "hit")",
+                "Cache status: \(activeExecutable == nil ? "miss" : "hit")",
                 "Cache key: \(context.key.rawValue)",
+                "Variants: \(entries.count)",
             ]
-            if let executable {
-                lines.append("Executable: \(executable.path)")
-            }
-            lines.append("Compiler: \(context.toolchain.compilerPath)")
-            lines.append("Swift: \(compilerVersionLine(context.toolchain.compilerVersion))")
-
-            if executable != nil {
-                if let metadata = CacheMetadata.read(from: context.cache.metadataURL(for: context.key)) {
-                    lines.append("Created: \(formatDate(metadata.createdAt))")
-                } else {
-                    lines.append("Metadata: unavailable")
+            for entry in entries {
+                let isActive = entry.key == context.key && context.cache.cachedExecutable(for: entry.key) != nil
+                let sourceIsCurrent = entry.metadata.sourceHash == SHA256.hexDigest(of: context.script.contents)
+                lines += [
+                    "",
+                    "Variant: \(entry.key.rawValue)\(isActive ? " ACTIVE" : "")",
+                    "Cache key: \(entry.key.rawValue)",
+                    "Compiler version: \(compilerVersionLine(entry.metadata.compilerVersion))",
+                    "Compiler path: \(entry.metadata.compilerPath)",
+                    "Target: \(entry.metadata.target)",
+                    "SDK: \(entry.metadata.sdk ?? "none")",
+                    "Support fingerprint: \(entry.metadata.supportFingerprint)",
+                    "Source current: \(sourceIsCurrent ? "yes" : "no")",
+                    "Active: \(isActive ? "yes" : "no")",
+                    "Created: \(formatDate(entry.metadata.createdAt))",
+                ]
+                if let executable = context.cache.cachedExecutable(for: entry.key) {
+                    lines.append("Executable: \(executable.path)")
                 }
             }
             return lines.joined(separator: "\n") + "\n"
@@ -77,25 +90,29 @@ struct CacheAdministration {
     }
 
     private func cleanScript(_ scriptPath: String) throws {
-        let context = try ScriptContext.resolve(
-            scriptPath: scriptPath,
-            environment: environment,
-            fileManager: fileManager
-        )
-        let removed = try context.cache.withAccessLock(mode: .shared) {
-            guard fileManager.fileExists(atPath: context.cache.root.path) else {
-                return false
+        let script = try Script.resolve(scriptPath, fileManager: fileManager)
+        let cache = try Cache(environment: environment, fileManager: fileManager)
+        let removedCount = try cache.withAccessLock(mode: .shared) {
+            guard fileManager.fileExists(atPath: cache.root.path) else {
+                return 0
             }
-            try context.cache.prepare()
-            let entryLock = try CacheLock(url: context.cache.lockURL(for: context.key))
-            return try entryLock.whileHeld {
-                try context.cache.removeEntry(for: context.key)
+            try cache.prepare()
+            let keys = try cache.metadataEntries()
+                .filter { $0.metadata.sourcePath == script.path }
+                .map(\.key)
+            var count = 0
+            for key in keys {
+                let entryLock = try CacheLock(url: cache.lockURL(for: key))
+                if try entryLock.whileHeld({ try cache.removeEntry(for: key) }) {
+                    count += 1
+                }
             }
+            return count
         }
-        if removed {
-            write("Removed cache entry for \(context.script.path)\n")
+        if removedCount > 0 {
+            write("Removed \(removedCount) cache variant(s) for \(script.path)\n")
         } else {
-            write("No cache entry for \(context.script.path)\n")
+            write("No cache entry for \(script.path)\n")
         }
     }
 

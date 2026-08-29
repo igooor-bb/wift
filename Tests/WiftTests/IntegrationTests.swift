@@ -131,6 +131,7 @@ import Testing
             #expect(summary.exitCode == 0)
             #expect(summary.standardOutput.contains("Executables: 2\n"))
             #expect(summary.standardOutput.contains("Module cache: "))
+            #expect(summary.standardOutput.contains("Support cache: "))
             #expect(summary.standardOutput.contains("Total: "))
         }
     }
@@ -144,7 +145,7 @@ import Testing
 
             let clean = try fixture.runWift(["cache", "clean", script.path])
             #expect(clean.exitCode == 0)
-            #expect(clean.standardOutput.contains("Removed cache entry for "))
+            #expect(clean.standardOutput.contains("Removed 1 cache variant(s) for "))
             #expect(try fixture.cachedExecutables().isEmpty)
 
             _ = try fixture.run(script)
@@ -257,7 +258,136 @@ import Testing
                 #expect(result.standardOutput == "concurrent\n")
             }
             #expect(try fixture.compilationCount() == 1)
+            #expect(try fixture.supportCompilationCount() == 1)
             #expect(try fixture.cachedExecutables().count == 1)
+        }
+    }
+
+    @Test func importsWiftAndUsesProcessHelpers() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory)
+            let script = try fixture.writeScript(
+                """
+                import Foundation
+                import Wift
+
+                print(try run("/bin/sh", "-c", "exit 0"))
+                print(try run("/bin/sh", arguments: ["-c", "exit 0"]))
+                print(try run("/bin/sh", "-c", "exit 9"))
+                do {
+                    try checkRun("/bin/sh", "-c", "exit 7")
+                } catch let error as CommandFailure {
+                    print("failure=\\(error.executable),\\(error.arguments.joined(separator: ",")),\\(error.status)")
+                }
+                let output = try capture("/bin/sh", "-c", "printf 'out\\n\\n'; printf 'err\\n' >&2")
+                print("capture=\\(output.status):\\(output.stdout.debugDescription):\\(output.stderr.debugDescription)")
+                print("which=\\(which("sh") != nil),\\(which("definitely-not-a-wift-command") == nil),\\(which("/bin/sh") != nil)")
+                print("path=\\(Script.path.path)")
+                print("directory=\\(Script.directory.path)")
+                """
+            )
+
+            let result = try fixture.run(script)
+            let canonicalPath = try Script.resolve(script.path).path
+            #expect(result.exitCode == 0, Comment(rawValue: result.standardError))
+            #expect(result.standardOutput.contains("0\n0\n9\n"))
+            #expect(result.standardOutput.contains("failure=/bin/sh,-c,exit 7,7\n"))
+            #expect(result.standardOutput.contains("capture=0:\"out\\n\\n\":\"err\\n\"\n"))
+            #expect(result.standardOutput.contains("which=true,true,true\n"))
+            #expect(result.standardOutput.contains("path=\(canonicalPath)\n"))
+            #expect(result.standardOutput.contains("directory=\(directory.path)\n"))
+        }
+    }
+
+    @Test func capturesLargeStdoutAndStderrWithoutDeadlock() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory)
+            let script = try fixture.writeScript(
+                """
+                import Wift
+                let output = try capture(
+                    "/bin/sh",
+                    "-c",
+                    "yes o | head -c 200000 & yes e | head -c 200000 >&2 & wait"
+                )
+                print("\\(output.status),\\(output.stdout.utf8.count),\\(output.stderr.utf8.count)")
+                """
+            )
+
+            let result = try fixture.run(script)
+            #expect(result.exitCode == 0, Comment(rawValue: result.standardError))
+            #expect(result.standardOutput == "0,200000,200000\n")
+        }
+    }
+
+    @Test func eprintAndDieWriteToStandardError() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory)
+            let script = try fixture.writeScript(
+                """
+                import Wift
+                eprint("before")
+                die("fatal", status: 7)
+                """
+            )
+
+            let result = try fixture.run(script)
+            #expect(result.exitCode == 7)
+            #expect(result.standardError == "before\nfatal\n")
+        }
+    }
+
+    @Test func reusesSupportCacheAcrossScriptVariants() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory, instrumentCompiler: true)
+            let script = try fixture.writeScript("import Wift\nprint(which(\"sh\") != nil)")
+            let first = try fixture.run(script, wiftArguments: ["--verbose"])
+            try Data("import Wift\nprint(which(\"swiftc\") != nil)".utf8).write(to: script)
+            let second = try fixture.run(script, wiftArguments: ["--verbose"])
+
+            #expect(first.standardError.contains("wift: support cache miss\n"))
+            #expect(second.standardError.contains("wift: support cache hit\n"))
+            #expect(second.standardError.contains("wift: support module: "))
+            #expect(try fixture.supportCompilationCount() == 1)
+            #expect(try fixture.compilationCount() == 2)
+        }
+    }
+
+    @Test func cachedExecutableDoesNotRequireSupportArtifacts() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory, instrumentCompiler: true)
+            let script = try fixture.writeScript("import Wift\nprint(\"standalone\")")
+            #expect(try fixture.run(script).standardOutput == "standalone\n")
+            try FileManager.default.removeItem(
+                at: fixture.cacheDirectory.appendingPathComponent("support", isDirectory: true)
+            )
+
+            let cached = try fixture.run(script)
+            #expect(cached.exitCode == 0, Comment(rawValue: cached.standardError))
+            #expect(cached.standardOutput == "standalone\n")
+            #expect(try fixture.compilationCount() == 1)
+            #expect(try fixture.supportCompilationCount() == 1)
+        }
+    }
+
+    @Test func cacheInfoAndCleanCoverEveryScriptVariant() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory)
+            let script = try fixture.writeScript("print(1)")
+            _ = try fixture.run(script)
+            try Data("print(2)".utf8).write(to: script)
+            _ = try fixture.run(script)
+
+            let info = try fixture.runWift(["cache", "info", script.path])
+            #expect(info.standardOutput.contains("Variants: 2\n"))
+            #expect(info.standardOutput.contains(" ACTIVE\n"))
+            #expect(info.standardOutput.contains("Source current: no\n"))
+            #expect(info.standardOutput.contains("Support fingerprint: "))
+
+            let clean = try fixture.runWift(["cache", "clean", script.path])
+            #expect(clean.standardOutput.contains("Removed 2 cache variant(s)"))
+            #expect(try fixture.cachedExecutables().isEmpty)
+            #expect(try fixture.cachedSupportModules().count == 1)
         }
     }
 }
@@ -268,6 +398,7 @@ private struct Fixture {
     let wiftExecutable: URL
     let environment: [String: String]
     let compilerCountURL: URL?
+    let supportCompilerCountURL: URL?
     let compilerStartedFIFO: URL?
     let compilerReleaseFIFO: URL?
 
@@ -286,16 +417,29 @@ private struct Fixture {
             let compilerDirectory = directory.appendingPathComponent("compiler", isDirectory: true)
             try FileManager.default.createDirectory(at: compilerDirectory, withIntermediateDirectories: true)
             let countURL = compilerDirectory.appendingPathComponent("count")
+            let supportCountURL = compilerDirectory.appendingPathComponent("support-count")
             let wrapperURL = compilerDirectory.appendingPathComponent("swiftc")
             let wrapper = """
             #!/bin/sh
             case "$1" in
               --version|-print-target-info) exec "$WIFT_REAL_SWIFTC" "$@" ;;
               *)
-                printf 'compile\\n' >> "$WIFT_COMPILER_COUNT"
-                if [ -n "${WIFT_COMPILER_STARTED_FIFO:-}" ]; then
-                  printf 'started\\n' > "$WIFT_COMPILER_STARTED_FIFO"
-                  read -r _ < "$WIFT_COMPILER_RELEASE_FIFO"
+                is_support=false
+                previous=''
+                for argument in "$@"; do
+                  if [ "$previous" = '-module-name' ] && [ "$argument" = 'Wift' ]; then
+                    is_support=true
+                  fi
+                  previous="$argument"
+                done
+                if [ "$is_support" = true ]; then
+                  printf 'compile\\n' >> "$WIFT_SUPPORT_COMPILER_COUNT"
+                else
+                  printf 'compile\\n' >> "$WIFT_COMPILER_COUNT"
+                  if [ -n "${WIFT_COMPILER_STARTED_FIFO:-}" ]; then
+                    printf 'started\\n' > "$WIFT_COMPILER_STARTED_FIFO"
+                    read -r _ < "$WIFT_COMPILER_RELEASE_FIFO"
+                  fi
                 fi
                 exec "$WIFT_REAL_SWIFTC" "$@"
                 ;;
@@ -307,7 +451,9 @@ private struct Fixture {
             environment["PATH"] = "\(compilerDirectory.path):\(environment["PATH", default: ""])"
             environment["WIFT_REAL_SWIFTC"] = realSwiftCompiler
             environment["WIFT_COMPILER_COUNT"] = countURL.path
+            environment["WIFT_SUPPORT_COMPILER_COUNT"] = supportCountURL.path
             compilerCountURL = countURL
+            supportCompilerCountURL = supportCountURL
             if gateCompiler {
                 let startedFIFO = compilerDirectory.appendingPathComponent("started.fifo")
                 let releaseFIFO = compilerDirectory.appendingPathComponent("release.fifo")
@@ -323,6 +469,7 @@ private struct Fixture {
             }
         } else {
             compilerCountURL = nil
+            supportCompilerCountURL = nil
             compilerStartedFIFO = nil
             compilerReleaseFIFO = nil
         }
@@ -417,6 +564,17 @@ private struct Fixture {
         try cachedFiles(named: "metadata.json")
     }
 
+    func cachedSupportModules() throws -> [URL] {
+        let root = cacheDirectory.appendingPathComponent("support", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: root.path) else {
+            return []
+        }
+        return try FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )
+    }
+
     private func cachedFiles(named name: String) throws -> [URL] {
         let root = cacheDirectory.appendingPathComponent("executables", isDirectory: true)
         guard FileManager.default.fileExists(atPath: root.path) else {
@@ -439,6 +597,12 @@ private struct Fixture {
 
     func compilationCount() throws -> Int {
         let countURL = try #require(compilerCountURL)
+        let data = try Data(contentsOf: countURL)
+        return data.split(separator: Character("\n").asciiValue!).count
+    }
+
+    func supportCompilationCount() throws -> Int {
+        let countURL = try #require(supportCompilerCountURL)
         let data = try Data(contentsOf: countURL)
         return data.split(separator: Character("\n").asciiValue!).count
     }

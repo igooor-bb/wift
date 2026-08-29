@@ -23,7 +23,13 @@ struct CacheTests {
 
             try cache.prepare()
 
-            for path in [cache.root, cache.executablesDirectory, cache.moduleCacheDirectory, cache.locksDirectory] {
+            for path in [
+                cache.root,
+                cache.executablesDirectory,
+                cache.moduleCacheDirectory,
+                cache.supportDirectory,
+                cache.locksDirectory,
+            ] {
                 let attributes = try FileManager.default.attributesOfItem(atPath: path.path)
                 let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
                 #expect(permissions.intValue & 0o077 == 0)

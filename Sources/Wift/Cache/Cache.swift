@@ -20,6 +20,10 @@ struct Cache {
         root.appendingPathComponent("module-cache", isDirectory: true)
     }
 
+    var supportDirectory: URL {
+        root.appendingPathComponent("support", isDirectory: true)
+    }
+
     var locksDirectory: URL {
         root.appendingPathComponent("locks", isDirectory: true)
     }
@@ -31,7 +35,7 @@ struct Cache {
         )
     }
 
-    private var stagingDirectory: URL {
+    var stagingDirectory: URL {
         root.appendingPathComponent("staging", isDirectory: true)
     }
 
@@ -62,7 +66,14 @@ struct Cache {
                 at: root.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            for directory in [root, executablesDirectory, moduleCacheDirectory, locksDirectory, stagingDirectory] {
+            for directory in [
+                root,
+                executablesDirectory,
+                moduleCacheDirectory,
+                supportDirectory,
+                locksDirectory,
+                stagingDirectory,
+            ] {
                 try createPrivateDirectory(directory)
             }
             try ensureManagedMarker()
@@ -100,6 +111,10 @@ struct Cache {
         locksDirectory.appendingPathComponent("\(key.rawValue).lock", isDirectory: false)
     }
 
+    func supportLockURL(for fingerprint: CacheKey) -> URL {
+        locksDirectory.appendingPathComponent("support-\(fingerprint.rawValue).lock", isDirectory: false)
+    }
+
     func makeStagingEntry(for key: CacheKey) throws -> URL {
         let directory = stagingDirectory.appendingPathComponent(
             "\(key.rawValue)-\(UUID().uuidString)",
@@ -132,6 +147,53 @@ struct Cache {
             try fileManager.moveItem(at: stagingEntry, to: destination)
         } catch {
             throw WiftError("unable to install cache entry: \(error.localizedDescription)")
+        }
+    }
+
+    func cachedSupportModule(_ module: SupportModule) -> SupportModule? {
+        guard isTrustedRegularFile(module.moduleURL),
+              isTrustedRegularFile(module.objectURL),
+              isTrustedRegularFile(module.metadataURL),
+              SupportModuleMetadata.read(from: module.metadataURL) == SupportModuleMetadata(module: module)
+        else {
+            return nil
+        }
+        return module
+    }
+
+    func makeSupportStagingEntry(for fingerprint: CacheKey) throws -> URL {
+        let directory = stagingDirectory.appendingPathComponent(
+            "support-\(fingerprint.rawValue)-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        do {
+            try fileManager.createDirectory(
+                at: directory,
+                withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700]
+            )
+            return directory
+        } catch {
+            throw WiftError("unable to create support staging directory: \(error.localizedDescription)")
+        }
+    }
+
+    func installSupportModule(stagingEntry: URL, module: SupportModule) throws {
+        do {
+            try fileManager.moveItem(at: stagingEntry, to: module.directory)
+        } catch {
+            throw WiftError("unable to install support module: \(error.localizedDescription)")
+        }
+    }
+
+    func removeInvalidSupportModuleIfPresent(_ module: SupportModule) throws {
+        guard fileManager.fileExists(atPath: module.directory.path), cachedSupportModule(module) == nil else {
+            return
+        }
+        do {
+            try fileManager.removeItem(at: module.directory)
+        } catch {
+            throw WiftError("unable to replace invalid support module: \(error.localizedDescription)")
         }
     }
 
@@ -180,6 +242,18 @@ struct Cache {
         }
     }
 
+    func metadataEntries() throws -> [(key: CacheKey, metadata: CacheMetadata)] {
+        try files(in: executablesDirectory).compactMap { file in
+            guard file.lastPathComponent == "metadata.json",
+                  isTrustedRegularFile(file),
+                  let metadata = CacheMetadata.read(from: file)
+            else {
+                return nil
+            }
+            return (CacheKey(rawValue: metadata.cacheKey), metadata)
+        }
+    }
+
     func removeAll() throws {
         let sharedCacheDirectory: URL
         do {
@@ -218,6 +292,7 @@ struct Cache {
             executableCount: validExecutableCount(),
             executableBytes: logicalSize(of: executablesDirectory),
             moduleCacheBytes: logicalSize(of: moduleCacheDirectory),
+            supportModuleBytes: logicalSize(of: supportDirectory),
             totalBytes: logicalSize(of: root)
         )
     }
@@ -336,6 +411,17 @@ struct Cache {
               status.st_uid == geteuid(),
               status.st_mode & S_IFMT == S_IFREG,
               status.st_mode & S_IXUSR != 0,
+              status.st_mode & (S_IWGRP | S_IWOTH) == 0
+        else {
+            return false
+        }
+        return true
+    }
+
+    private func isTrustedRegularFile(_ file: URL) -> Bool {
+        guard let status = fileStatus(at: file),
+              status.st_uid == geteuid(),
+              status.st_mode & S_IFMT == S_IFREG,
               status.st_mode & (S_IWGRP | S_IWOTH) == 0
         else {
             return false

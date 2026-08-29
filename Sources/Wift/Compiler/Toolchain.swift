@@ -38,7 +38,12 @@ struct Toolchain: Equatable {
     }
 
     func compilerArguments(moduleCachePath: String) -> [String] {
-        var arguments = ["-module-cache-path", moduleCachePath]
+        var arguments = [
+            "-module-cache-path",
+            moduleCachePath,
+            "-target",
+            target,
+        ]
         if let sdkPath {
             arguments += ["-sdk", sdkPath]
         }

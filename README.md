@@ -27,6 +27,33 @@ chmod +x script.swift
 ./script.swift
 ```
 
+## Built-in scripting library
+
+Every script can import the built-in `Wift` module without a `Package.swift` or extra installation files:
+
+```swift
+#!/usr/bin/env wift
+
+import Wift
+
+try checkRun("git", "--version")
+let result = try capture("git", "status", "--short")
+print(result.stdout, terminator: "")
+```
+
+The public helpers are:
+
+- `run(_:_:...)` and `run(_:arguments:)` to inherit standard streams and return the command status;
+- `checkRun(_:_:...)` to throw `CommandFailure` on a nonzero status;
+- `capture(_:_:...)` to collect stdout and stderr concurrently without trimming them;
+- `which(_:)` to find an executable directly from `PATH`;
+- `eprint(_:)` and `die(_:status:)` for stderr diagnostics and termination;
+- `Script.path` and `Script.directory` for the canonical source location.
+
+`import Wift` is a small, fixed scripting API bundled into the `wift` executable. It is not a mechanism for importing arbitrary SwiftPM dependencies.
+
+Run the complete example with `mise run wift Examples/Wift.swift`.
+
 > To try a local checkout manually, run `mise run wift Examples/Hello.swift`. This is a convenience wrapper around `swift run wift <script> [arguments...]`; for example, `mise run wift Examples/Arguments.swift one --two three`.
 
 ## Installation
@@ -45,12 +72,14 @@ The destination is the conventional per-user binary directory and does not requi
 `wift` resolves `swiftc` from the current `PATH`, identifies the active compiler, target, and SDK, then derives a deterministic SHA-256 fingerprint:
 
 ```text
-source + canonical path + toolchain + target/SDK + compiler configuration
+source + canonical path + toolchain + target/SDK + compiler configuration + Wift support fingerprint
                                   ↓
                             cache key
                                   ↓
                          cached executable
 ```
+
+The built-in library is maintained separately from the CLI at [`Sources/WiftLibrary/Wift.swift`](Sources/WiftLibrary/Wift.swift). The executable target explicitly compiles only `Sources/Wift`; SwiftPM's `embedInCode` rule packages the library file's bytes directly into the runner without making its declarations part of the CLI module or creating a resource bundle. For each compiler, target, SDK, and support configuration, `wift` atomically builds and caches a static `Wift.swiftmodule` and `Wift.o`. Script compilation receives the module search path and links the object directly, so cached script executables have no dynamic dependency on the support cache or on files beside the installed `wift` binary.
 
 On a cache miss, `swiftc` compiles into a staging directory inside the cache. `wift` writes diagnostic metadata and atomically renames the complete entry into place. A persistent Swift module cache is shared across compilations.
 
@@ -73,12 +102,12 @@ Diagnostics from `wift` use the `wift:` prefix and go to stderr. The script's st
 ```bash
 wift cache                         # summary and logical sizes
 wift cache path                    # absolute cache path only
-wift cache info script.swift       # current fingerprint and hit/miss state
-wift cache clean script.swift      # remove the current entry
+wift cache info script.swift       # all variants; marks the current one ACTIVE
+wift cache clean script.swift      # remove every variant of this script
 wift cache clean                   # remove the entire managed cache
 ```
 
-`cache info` never compiles the script. `cache clean <script>` removes only the entry for the script's current fingerprint; historical entries created from older source or toolchain versions remain until the entire cache is cleaned.
+`cache info` never compiles the script. It lists every cached variant for the canonical script path, including its compiler, target/SDK, support fingerprint, source freshness, and active state. `cache clean <script>` removes all of those script variants without removing the shared support module. A full `cache clean` removes the support cache as part of the managed cache root.
 
 ## Cache semantics
 
@@ -89,6 +118,7 @@ The default cache is the system user cache directory (`~/Library/Caches/wift` on
 - `swiftc` path or version;
 - target or SDK;
 - compiler arguments used by `wift`;
+- the built-in `Wift` support-module fingerprint;
 - fingerprint schema.
 
 `WIFT_CACHE_DIR` can point to a dedicated cache directory, primarily for isolated environments and tests. The cache root must be owned by the current user and inaccessible to group and other users. `wift` rejects symlink executables, non-regular artifacts, foreign ownership, and group/world-writable cache binaries. Compiler and script arguments are passed directly to `Process`/`execv`; no shell evaluates them.
