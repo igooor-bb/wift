@@ -22,6 +22,16 @@
 - Choose value or reference semantics from the identity, ownership, lifetime, and mutation requirements of the case. Keep APIs narrow, dependencies explicit, and output deterministic; avoid uncontrolled shared mutable state and unstructured concurrency.
 - Use the repository SwiftFormat and SwiftLint configurations. Match established naming and error-reporting style.
 
+## Built-in scripting API
+
+- Keep the scripting API process-first, compact, cohesive, and free of unnecessary dependencies.
+- Prefer immutable values and explicit, readable composition over implicit behavior, operator magic, and abstraction-heavy DSL machinery.
+- Make common operations safe and checked by default. Unsafe, unchecked, unbounded, or shell-evaluated behavior must be deliberate and visible at the call site.
+- Keep semantics consistent across synchronous, asynchronous, streaming, and composed execution. Cancellation and resource cleanup are part of the API contract.
+- Keep public values easy to compose and resilient to evolution. Introduce ownership or layout constraints only when they provide a clear user benefit.
+- Apply modern Swift features and performance optimizations selectively, based on measurements of real artifacts and compilation latency rather than source-level assumptions.
+- Document every public symbol with valid SwiftDocC comments and keep examples aligned with actual behavior. Test library semantics natively and reserve integration tests for genuine system boundaries.
+
 ## Security rules
 
 - Treat script paths, arguments, compiler paths, cache paths, and environment values as data rather than shell syntax. Prefer argument arrays and direct process/exec APIs; when a shell is genuinely required, define the trust boundary and escape or constrain every externally controlled value explicitly.
