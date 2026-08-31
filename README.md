@@ -186,6 +186,10 @@ swiftlint
 
 Use `mise run support-size` to report the embedded source, support object, representative script sizes, cold compilation time, and compiler module-cache context count.
 
+## Benchmarks
+
+The local end-to-end suite measures release builds of `wift`, direct cached executables, ordinary Swift scripts, and shell scripts. See [Benchmarks](Benchmarks/README.md) for the scenario catalogue, measurement methodology, architecture, commands, and baseline workflow.
+
 ## License
 
 MIT

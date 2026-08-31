@@ -26,6 +26,10 @@ run = "swift run wift"
 description = "Report built-in library and compiler cache context sizes"
 run = "sh Scripts/support-size.sh"
 
+[tasks.benchmark]
+description = "Run end-to-end performance benchmarks"
+run = "sh Scripts/benchmark.sh"
+
 [tasks.install]
 description = "Install wift to ~/.local/bin"
 run = """

@@ -12,6 +12,11 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.6.1"),
+        .package(
+            url: "https://github.com/ordo-one/benchmark",
+            "1.34.1" ..< "1.35.0",
+            traits: []
+        ),
     ],
     targets: [
         .target(
@@ -40,5 +45,15 @@ let package = Package(
         ),
         .testTarget(name: "WiftTests", dependencies: ["Wift"]),
         .testTarget(name: "WiftLibraryTests", dependencies: ["WiftLibrary"]),
+        .executableTarget(
+            name: "WiftBenchmarks",
+            dependencies: [
+                .product(name: "Benchmark", package: "benchmark"),
+            ],
+            path: "Benchmarks/WiftBenchmarks",
+            plugins: [
+                .plugin(name: "BenchmarkPlugin", package: "benchmark"),
+            ]
+        ),
     ]
 )

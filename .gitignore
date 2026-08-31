@@ -1,4 +1,4 @@
 .build/
 .swiftpm/
+.benchmarkBaselines/
 .DS_Store
-
