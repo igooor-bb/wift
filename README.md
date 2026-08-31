@@ -1,5 +1,6 @@
 # wift
 
+[![CI](https://img.shields.io/github/actions/workflow/status/igooor-bb/wift/ci.yml?branch=main&label=CI)](https://github.com/igooor-bb/wift/actions/workflows/ci.yml)
 [![Swift 6.2+](https://img.shields.io/badge/Swift-6.2%2B-F05138?logo=swift&logoColor=white)](https://www.swift.org/)
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-000000?logo=apple&logoColor=white)](https://www.apple.com/macos/)
 

@@ -1,0 +1,4 @@
+# GitHub-rendered prose and long links are intentionally not hard-wrapped.
+[global]
+disable = ["MD013"]
+flavor = "gfm"

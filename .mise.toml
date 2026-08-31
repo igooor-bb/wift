@@ -1,4 +1,5 @@
 [tools]
+rumdl = "0.2.62"
 swiftformat = "0.62.1"
 swiftlint = "0.65.1"
 
@@ -13,6 +14,10 @@ run = "swiftformat --lint ."
 [tasks.lint]
 description = "Lint Swift sources"
 run = "swiftlint"
+
+[tasks."markdown-lint"]
+description = "Lint Markdown files"
+run = "rumdl check ."
 
 [tasks.test]
 description = "Run the test suite"
@@ -44,4 +49,4 @@ run = "rm -f \"$HOME/.local/bin/wift\""
 
 [tasks.check]
 description = "Run all project checks"
-depends = ["format-check", "lint", "test"]
+depends = ["format-check", "lint", "markdown-lint", "test"]
