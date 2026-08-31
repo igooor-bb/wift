@@ -11,13 +11,11 @@ struct ScriptContext {
     let key: CacheKey
 
     static func resolve(
-        scriptPath: String,
-        environment: [String: String],
-        fileManager: FileManager
+        script: Script,
+        cache: Cache,
+        environment: [String: String]
     ) throws -> ScriptContext {
-        let script = try Script.resolve(scriptPath, fileManager: fileManager)
-        let cache = try Cache(environment: environment, fileManager: fileManager)
-        let toolchain = try Toolchain.resolve(environment: environment)
+        let toolchain = try Toolchain.resolve(environment: environment, cache: cache)
         let moduleCacheContext = toolchain.moduleCacheContext(moduleCachePath: cache.moduleCacheDirectory.path)
         let supportModule = SupportModule.resolve(
             toolchain: toolchain,

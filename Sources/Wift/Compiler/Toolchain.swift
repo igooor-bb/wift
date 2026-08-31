@@ -11,13 +11,47 @@ struct Toolchain: Equatable {
     let sdkPath: String?
 
     static func resolve(
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        cache: Cache,
+        dependencies: ToolchainResolutionDependencies = .live
     ) throws -> Toolchain {
-        guard let compilerPath = ExecutableLookup.find("swiftc", environment: environment) else {
+        guard let compilerPath = dependencies.findExecutable("swiftc", environment) else {
             throw WiftError("unable to locate swiftc")
         }
 
-        let versionOutput = try ProcessExecution.capture(executable: compilerPath, arguments: ["--version"])
+        let sdkPath = resolveSDKPath(environment: environment, capture: dependencies.capture)
+        guard let signature = ToolchainInstallationSignature.resolve(
+            compilerPath: compilerPath,
+            sdkPath: sdkPath,
+            environment: environment,
+            dependencies: dependencies
+        ) else {
+            return try identify(
+                compilerPath: compilerPath,
+                sdkPath: sdkPath,
+                capture: dependencies.capture
+            )
+        }
+
+        return try ToolchainResolutionCache(cache: cache).resolve(
+            signature: signature,
+            compilerPath: compilerPath,
+            sdkPath: sdkPath
+        ) {
+            try identify(
+                compilerPath: compilerPath,
+                sdkPath: sdkPath,
+                capture: dependencies.capture
+            )
+        }
+    }
+
+    private static func identify(
+        compilerPath: String,
+        sdkPath: String?,
+        capture: (String, [String]) throws -> ProcessOutput
+    ) throws -> Toolchain {
+        let versionOutput = try capture(compilerPath, ["--version"])
         guard versionOutput.exitCode == 0 else {
             throw WiftError("unable to identify swiftc")
         }
@@ -31,8 +65,6 @@ struct Toolchain: Equatable {
             throw WiftError("unable to resolve Swift target information")
         }
         let target = targetLine.dropFirst("Target: ".count).trimmingCharacters(in: .whitespaces)
-        let sdkPath = resolveSDKPath(environment: environment)
-
         return Toolchain(
             compilerPath: compilerPath,
             compilerVersion: version,
@@ -54,15 +86,17 @@ struct Toolchain: Equatable {
         return ModuleCacheContext(arguments: arguments)
     }
 
-    private static func resolveSDKPath(environment: [String: String]) -> String? {
+    private static func resolveSDKPath(
+        environment: [String: String],
+        capture: (String, [String]) throws -> ProcessOutput
+    ) -> String? {
         #if os(macOS)
             if let sdkRoot = environment["SDKROOT"], !sdkRoot.isEmpty {
                 return URL(fileURLWithPath: sdkRoot).standardizedFileURL.resolvingSymlinksInPath().path
             }
-            guard let output = try? ProcessExecution.capture(
-                executable: "/usr/bin/xcrun",
-                arguments: ["--sdk", "macosx", "--show-sdk-path"]
-            ), output.exitCode == 0 else {
+            guard let output = try? capture("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-path"]),
+                  output.exitCode == 0
+            else {
                 return nil
             }
 

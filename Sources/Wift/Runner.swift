@@ -19,12 +19,15 @@ struct Runner {
         scriptPath: String,
         arguments: [String]
     ) throws -> Never {
-        let context = try ScriptContext.resolve(
-            scriptPath: scriptPath,
-            environment: environment,
-            fileManager: fileManager
-        )
-        try context.cache.withAccessLock(mode: .shared) {
+        let script = try Script.resolve(scriptPath, fileManager: fileManager)
+        let cache = try Cache(environment: environment, fileManager: fileManager)
+        return try cache.withAccessLock(mode: .shared) {
+            try cache.prepare()
+            let context = try ScriptContext.resolve(
+                script: script,
+                cache: cache,
+                environment: environment
+            )
             try run(context: context, arguments: arguments)
         }
     }
@@ -35,7 +38,6 @@ struct Runner {
     ) throws -> Never {
         let script = context.script
         let cache = context.cache
-        try cache.prepare()
         let toolchain = context.toolchain
         let compilerArguments = context.compilerArguments
         let key = context.key

@@ -24,6 +24,10 @@ struct Cache {
         root.appendingPathComponent("support", isDirectory: true)
     }
 
+    var toolchainsDirectory: URL {
+        root.appendingPathComponent("toolchains", isDirectory: true)
+    }
+
     var locksDirectory: URL {
         root.appendingPathComponent("locks", isDirectory: true)
     }
@@ -71,6 +75,7 @@ struct Cache {
                 executablesDirectory,
                 moduleCacheDirectory,
                 supportDirectory,
+                toolchainsDirectory,
                 locksDirectory,
                 stagingDirectory,
             ] {
@@ -143,6 +148,21 @@ struct Cache {
 
     func supportLockURL(for fingerprint: CacheKey) -> URL {
         locksDirectory.appendingPathComponent("support-\(fingerprint.rawValue).lock", isDirectory: false)
+    }
+
+    func toolchainResolutionURL(for signature: CacheKey) -> URL {
+        toolchainsDirectory.appendingPathComponent("\(signature.rawValue).json", isDirectory: false)
+    }
+
+    func toolchainLockURL(for signature: CacheKey) -> URL {
+        locksDirectory.appendingPathComponent("toolchain-\(signature.rawValue).lock", isDirectory: false)
+    }
+
+    func trustedData(at url: URL) -> Data? {
+        guard isTrustedRegularFile(url) else {
+            return nil
+        }
+        return try? Data(contentsOf: url)
     }
 
     func makeStagingEntry(for key: CacheKey) throws -> URL {

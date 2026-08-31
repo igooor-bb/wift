@@ -28,6 +28,7 @@ struct CacheTests {
                 cache.executablesDirectory,
                 cache.moduleCacheDirectory,
                 cache.supportDirectory,
+                cache.toolchainsDirectory,
                 cache.locksDirectory,
             ] {
                 let attributes = try FileManager.default.attributesOfItem(atPath: path.path)

@@ -1,5 +1,9 @@
 import Foundation
 
+// Direct POSIX calls are intentional. Toolchain resolution is a synchronous startup hot path,
+// while swift-subprocess exposes an async API and adds a swift-system dependency. Keeping this
+// layer dependency-free also lets us reuse the mechanism in the source-embedded WiftLibrary.
+
 struct ProcessOutput {
     let standardOutput: Data
     let standardError: Data
@@ -11,25 +15,24 @@ enum ProcessExecution {
         executable: String,
         arguments: [String]
     ) throws -> ProcessOutput {
-        let process = Process()
-        let standardOutput = Pipe()
-        let standardError = Pipe()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = standardOutput
-        process.standardError = standardError
-
-        do {
-            try process.run()
-        } catch {
-            throw WiftError("unable to run \(executable): \(error.localizedDescription)")
-        }
-
-        process.waitUntilExit()
-        return ProcessOutput(
-            standardOutput: standardOutput.fileHandleForReading.readDataToEndOfFile(),
-            standardError: standardError.fileHandleForReading.readDataToEndOfFile(),
-            exitCode: process.terminationStatus
+        var capture = try ProcessCapture()
+        let processID = try POSIXProcess.spawn(
+            executable: executable,
+            arguments: arguments,
+            capture: capture
         )
+        capture.closeWriteEnds()
+        do {
+            let output = try capture.read()
+            return try ProcessOutput(
+                standardOutput: output.standardOutput,
+                standardError: output.standardError,
+                exitCode: POSIXProcess.wait(for: processID, executable: executable)
+            )
+        } catch {
+            capture.closeReadEnds()
+            _ = try? POSIXProcess.wait(for: processID, executable: executable)
+            throw error
+        }
     }
 }

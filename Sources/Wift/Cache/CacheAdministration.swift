@@ -40,16 +40,19 @@ struct CacheAdministration {
     }
 
     func printInfo(scriptPath: String) throws {
-        let context = try ScriptContext.resolve(
-            scriptPath: scriptPath,
-            environment: environment,
-            fileManager: fileManager
-        )
-        let output = try context.cache.withAccessLock(mode: .shared) {
-            let entries = try context.cache.metadataEntries(associatedWith: context.script.path)
+        let script = try Script.resolve(scriptPath, fileManager: fileManager)
+        let cache = try Cache(environment: environment, fileManager: fileManager)
+        let output = try cache.withAccessLock(mode: .shared) {
+            try cache.prepare()
+            let context = try ScriptContext.resolve(
+                script: script,
+                cache: cache,
+                environment: environment
+            )
+            let entries = try cache.metadataEntries(associatedWith: context.script.path)
                 .sorted { $0.metadata.createdAt > $1.metadata.createdAt }
-            let activeExecutable = context.cache.hasPathAssociation(for: context.script.path, key: context.key)
-                ? context.cache.cachedExecutable(for: context.key)
+            let activeExecutable = cache.hasPathAssociation(for: context.script.path, key: context.key)
+                ? cache.cachedExecutable(for: context.key)
                 : nil
             var lines = [
                 "Script: \(context.script.path)",
@@ -58,7 +61,7 @@ struct CacheAdministration {
                 "Variants: \(entries.count)",
             ]
             for entry in entries {
-                let isActive = entry.key == context.key && context.cache.cachedExecutable(for: entry.key) != nil
+                let isActive = entry.key == context.key && cache.cachedExecutable(for: entry.key) != nil
                 let sourceIsCurrent = entry.metadata.sourceHash == SHA256.hexDigest(of: context.script.contents)
                 lines += [
                     "",
@@ -73,7 +76,7 @@ struct CacheAdministration {
                     "Active: \(isActive ? "yes" : "no")",
                     "Created: \(formatDate(entry.metadata.createdAt))",
                 ]
-                if let executable = context.cache.cachedExecutable(for: entry.key) {
+                if let executable = cache.cachedExecutable(for: entry.key) {
                     lines.append("Executable: \(executable.path)")
                 }
             }
