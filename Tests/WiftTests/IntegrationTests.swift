@@ -115,8 +115,16 @@ import Testing
             #expect(help.standardOutput.contains("wift cache info <script.swift>"))
 
             let version = try fixture.runWift(["--version"])
+            let versionFile = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("VERSION")
+            let versionData = try Data(contentsOf: versionFile)
+            let expectedVersion = try #require(String(data: versionData, encoding: .utf8))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             #expect(version.exitCode == 0)
-            #expect(version.standardOutput == "wift 0.1.0\n")
+            #expect(version.standardOutput == "wift \(expectedVersion)\n")
         }
     }
 
@@ -310,7 +318,6 @@ import Testing
             let script = try fixture.writeScript(
                 """
                 import Wift
-
                 print(try cmd("/bin/echo", "embedded").text())
                 print(Script.arguments.joined(separator: ","))
                 """
