@@ -44,7 +44,9 @@ struct Runner {
         diagnostics.log("support module: \(context.supportModule.directory.path)")
         diagnostics.log("cache key: \(key.rawValue)")
 
-        if let executable = cache.cachedExecutable(for: key) {
+        if let executable = cache.cachedExecutable(for: key),
+           cache.hasPathAssociation(for: script.path, key: key)
+        {
             diagnostics.log(cache.cachedSupportModule(context.supportModule) == nil ? "support cache miss" : "support cache hit")
             diagnostics.log("cache hit")
             diagnostics.log("executable: \(executable.path)")
@@ -56,8 +58,11 @@ struct Runner {
             )
         }
 
-        diagnostics.log("cache miss")
-        try prepareSupportModule(context.supportModule, cache: cache, compiler: SwiftCompiler(toolchain: toolchain))
+        let existingExecutable = cache.cachedExecutable(for: key) != nil
+        diagnostics.log(existingExecutable ? "cache hit" : "cache miss")
+        if !existingExecutable {
+            try prepareSupportModule(context.supportModule, cache: cache, compiler: SwiftCompiler(toolchain: toolchain))
+        }
         let executable: URL
         let lock = try CacheLock(
             url: cache.lockURL(for: key),
@@ -65,7 +70,12 @@ struct Runner {
         )
         executable = try lock.whileHeld {
             if let cached = cache.cachedExecutable(for: key) {
-                diagnostics.log("cache populated by another process")
+                if !cache.hasPathAssociation(for: script.path, key: key) {
+                    try cache.addPathAssociation(for: script.path, key: key)
+                    diagnostics.log("associated cached executable with script path")
+                } else if !existingExecutable {
+                    diagnostics.log("cache populated by another process")
+                }
                 return cached
             }
 
@@ -84,8 +94,9 @@ struct Runner {
                 key: key,
                 toolchain: toolchain,
                 supportFingerprint: context.supportModule.fingerprint,
-                compilerArguments: compilerArguments
+                compilerConfiguration: context.compilerConfiguration
             ).write(to: stagingEntry.appendingPathComponent("metadata.json", isDirectory: false))
+            try cache.writePathAssociation(for: script.path, in: stagingEntry)
             try cache.install(stagingEntry: stagingEntry, for: key)
             return cache.executableURL(for: key)
         }

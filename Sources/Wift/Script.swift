@@ -4,11 +4,6 @@ struct Script: Equatable {
     let path: String
     let contents: Data
 
-    var needsStagedSwiftSource: Bool {
-        contents.starts(with: Data([0x23, 0x21]))
-            && URL(fileURLWithPath: path).pathExtension != "swift"
-    }
-
     static func resolve(
         _ inputPath: String,
         fileManager: FileManager = .default

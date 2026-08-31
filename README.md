@@ -10,7 +10,7 @@ wift script.swift one --two three
 wift --verbose script.swift
 ```
 
-Every argument after the script path is passed through without interpretation. The cached executable receives the script's canonical path as `argv[0]`.
+Every argument after the script path is passed through without interpretation. The cached executable receives the script's canonical path as `argv[0]`. The built-in `Script.path` exposes that launch-specific path, while Swift's `#filePath` is the stable compiler-visible name `script.swift`.
 
 For a shebang script:
 
@@ -27,7 +27,7 @@ chmod +x script.swift
 ./script.swift
 ```
 
-The shebang also allows extensionless script names such as `scripts/add`. When a shebang script does not have a `.swift` extension, `wift` stages its verified contents under a Swift filename for compilation while preserving the original canonical path as `argv[0]` and `Script.path`.
+The shebang also allows extensionless script names such as `scripts/add`. Every script, including extensionless shebang scripts, is compiled from verified bytes staged as `script.swift`; the original canonical path remains available through `argv[0]` and `Script.path`.
 
 ## Built-in scripting library
 
@@ -100,16 +100,18 @@ The destination is the conventional per-user binary directory and does not requi
 `wift` resolves `swiftc` from the current `PATH`, identifies the active compiler, target, and SDK, then derives a deterministic SHA-256 fingerprint:
 
 ```text
-source + canonical path + toolchain + target/SDK + compiler configuration + Wift support fingerprint
-                                  ↓
-                            cache key
-                                  ↓
-                         cached executable
+source + toolchain + target/SDK + semantic compiler configuration + Wift support fingerprint
+                                      ↓
+                                cache key
+                                      ↓
+                             cached executable
 ```
 
 The built-in library is maintained separately from the CLI at [`Sources/WiftLibrary/Wift.swift`](Sources/WiftLibrary/Wift.swift). A build-tool plugin embeds that exact source into the runner, while a SwiftPM target compiles it natively for API tests. The library is not linked into the `wift` executable as a second runtime copy. For each compiler, target, SDK, and support configuration, `wift` atomically builds and caches a static `Wift.swiftmodule` and `Wift.o`. Script compilation receives the module search path and links the object directly, so cached script executables have no dynamic dependency on the support cache or on files beside the installed `wift` binary.
 
-On a cache miss, `swiftc` compiles into a staging directory inside the cache. `wift` writes diagnostic metadata and atomically renames the complete entry into place. A persistent Swift module cache is shared across support and script compilations. Their context-forming compiler arguments are derived once and kept identical; action-specific emit and link arguments do not create a second module-cache context.
+On a cache miss, `wift` writes the exact verified source bytes to a private staging directory, invokes `swiftc` there with the relative input `script.swift`, and removes the source copy before publication. It writes path-independent diagnostic metadata plus `paths/<sha256(canonical-path)>.json`, then atomically renames the complete entry into place. A persistent Swift module cache is shared across support and script compilations. Its location, the support-module storage path, staging paths, and the cache root are invocation details rather than fingerprint inputs.
+
+Identical source in different checkout directories therefore shares one executable. Each new canonical path is associated with the entry under its lock, while `argv[0]`, `Script.path`, arguments, environment, and working directory remain specific to each launch.
 
 Concurrent misses for the same key use an advisory `flock` and recheck the cache after acquiring it, so only one process compiles. Once an executable is available, `execv` replaces `wift`; stdin, stdout, stderr, environment, working directory, signals, and exit status therefore retain normal Unix semantics.
 
@@ -135,21 +137,22 @@ wift cache clean script.swift      # remove every variant of this script
 wift cache clean                   # remove the entire managed cache
 ```
 
-`cache info` never compiles the script. It lists every cached variant for the canonical script path, including its compiler, target/SDK, support fingerprint, source freshness, and active state. `cache clean <script>` removes all of those script variants without removing the shared support module. A full `cache clean` removes the support cache as part of the managed cache root.
+`cache info` never compiles the script. It lists every cached entry associated with the canonical script path, including its compiler, target/SDK, support fingerprint, source freshness, and active state. `cache clean <script>` removes that path's associations from every content variant. A shared executable remains available to other associated copies and is deleted only with its final association. A full `cache clean` removes the support cache as part of the managed cache root.
 
 ## Cache semantics
 
 The default cache is the system user cache directory (`~/Library/Caches/wift` on macOS). Entries are sharded by the first two characters of their content-addressed key. Changing any of these values invalidates an entry:
 
 - script contents;
-- canonical script path;
 - `swiftc` path or version;
 - target or SDK;
-- compiler arguments used by `wift`;
+- semantic compiler configuration used by `wift`;
 - the built-in `Wift` support-module fingerprint;
 - fingerprint schema.
 
-`WIFT_CACHE_DIR` can point to a dedicated cache directory, primarily for isolated environments and tests. The cache root must be owned by the current user and inaccessible to group and other users. `wift` rejects symlink executables, non-regular artifacts, foreign ownership, and group/world-writable cache binaries. Compiler and script arguments are passed directly to `Process`/`execv`; no shell evaluates them.
+Canonical source paths identify associations, not executables. Absolute `-module-cache-path` and support storage arguments are also excluded from script and support fingerprints. `WIFT_CACHE_DIR` can point to a dedicated cache directory, primarily for isolated environments, tests, and CI. A CI job can restore the same managed cache under a different checkout or cache-root path without recompiling unchanged scripts, provided the toolchain, target/SDK, semantic configuration, and built-in support fingerprint still match.
+
+The cache root must be owned by the current user and inaccessible to group and other users. `wift` rejects symlink executables, non-regular artifacts, foreign ownership, and group/world-writable cache binaries. Compiler and script arguments are passed directly to `Process`/`execv`; no shell evaluates them.
 
 `swiftc` is intentionally selected from `PATH`, so use a trusted `PATH` just as when invoking the compiler directly.
 

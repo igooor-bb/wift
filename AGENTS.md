@@ -8,9 +8,10 @@
 - Parse `wift` options with Swift Argument Parser. After the script path, pass every argument through unchanged.
 - Normal execution is silent except for compiler diagnostics and script output. Verbose diagnostics use the `wift:` prefix and stderr only.
 - Preserve stdin, stdout, stderr, environment, working directory, signals, `argv[0]`, and exit status when handing control to the cached executable.
-- Derive cache identity from every input that can change the executable: source bytes, canonical path, compiler/toolchain identity, target/SDK, compiler configuration, and fingerprint schema.
+- Derive cache identity from every content input that can change the executable: source bytes, compiler/toolchain identity, target/SDK, semantic compiler configuration, support fingerprint, and fingerprint schema. Canonical source and cache-storage paths are not identity inputs.
+- Compile verified source bytes as the relative input `script.swift` from private staging storage. `#filePath` is therefore stable, while the launch-specific canonical path remains available through `argv[0]` and `Script.path`.
 - Build in private staging storage and publish complete entries atomically. Concurrent callers must coordinate, recheck after locking, and never observe partial artifacts.
-- Inspection commands do not compile. Script-specific cleanup affects only the current fingerprint; full cleanup affects only a verified managed cache.
+- Associate canonical paths with shared content-addressed entries under the entry lock. Inspection commands do not compile; script-specific cleanup removes only that path's associations and retains an entry until its last association is removed. Full cleanup affects only a verified managed cache.
 
 ## Engineering principles
 

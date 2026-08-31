@@ -99,12 +99,42 @@ struct Cache {
         entryDirectory(for: key).appendingPathComponent("metadata.json", isDirectory: false)
     }
 
+    func pathAssociationsDirectory(for key: CacheKey) -> URL {
+        entryDirectory(for: key).appendingPathComponent("paths", isDirectory: true)
+    }
+
+    func pathAssociationURL(for canonicalPath: String, key: CacheKey) -> URL {
+        pathAssociationsDirectory(for: key).appendingPathComponent(
+            PathAssociation(canonicalPath: canonicalPath).fileName,
+            isDirectory: false
+        )
+    }
+
     func cachedExecutable(for key: CacheKey) -> URL? {
         let executable = executableURL(for: key)
         guard isTrustedExecutable(executable) else {
             return nil
         }
         return executable
+    }
+
+    func hasPathAssociation(for canonicalPath: String, key: CacheKey) -> Bool {
+        isTrustedRegularFile(pathAssociationURL(for: canonicalPath, key: key))
+    }
+
+    func addPathAssociation(for canonicalPath: String, key: CacheKey) throws {
+        if hasPathAssociation(for: canonicalPath, key: key) {
+            return
+        }
+        try createPrivateDirectory(pathAssociationsDirectory(for: key))
+        try writePathAssociation(for: canonicalPath, in: entryDirectory(for: key))
+    }
+
+    func writePathAssociation(for canonicalPath: String, in entry: URL) throws {
+        let association = PathAssociation(canonicalPath: canonicalPath)
+        let directory = entry.appendingPathComponent("paths", isDirectory: true)
+        try createPrivateDirectory(directory)
+        try association.write(to: directory.appendingPathComponent(association.fileName, isDirectory: false))
     }
 
     func lockURL(for key: CacheKey) -> URL {
@@ -242,6 +272,32 @@ struct Cache {
         }
     }
 
+    func removePathAssociation(for canonicalPath: String, key: CacheKey) throws -> Bool {
+        let associationURL = pathAssociationURL(for: canonicalPath, key: key)
+        guard isTrustedRegularFile(associationURL),
+              PathAssociation.read(from: associationURL, expectedCanonicalPath: canonicalPath) != nil
+        else {
+            return false
+        }
+        do {
+            try fileManager.removeItem(at: associationURL)
+            if try !hasValidPathAssociations(for: key) {
+                _ = try removeEntry(for: key)
+            }
+            return true
+        } catch {
+            throw WiftError("unable to remove path association: \(error.localizedDescription)")
+        }
+    }
+
+    func metadataEntries(associatedWith canonicalPath: String) throws -> [(key: CacheKey, metadata: CacheMetadata)] {
+        try metadataEntries().filter { entry in
+            let associationURL = pathAssociationURL(for: canonicalPath, key: entry.key)
+            return isTrustedRegularFile(associationURL)
+                && PathAssociation.read(from: associationURL, expectedCanonicalPath: canonicalPath) != nil
+        }
+    }
+
     func metadataEntries() throws -> [(key: CacheKey, metadata: CacheMetadata)] {
         try files(in: executablesDirectory).compactMap { file in
             guard file.lastPathComponent == "metadata.json",
@@ -251,6 +307,20 @@ struct Cache {
                 return nil
             }
             return (CacheKey(rawValue: metadata.cacheKey), metadata)
+        }
+    }
+
+    private func hasValidPathAssociations(for key: CacheKey) throws -> Bool {
+        let directory = pathAssociationsDirectory(for: key)
+        guard fileManager.fileExists(atPath: directory.path) else {
+            return false
+        }
+        let contents = try fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+        )
+        return contents.contains { url in
+            isTrustedRegularFile(url) && PathAssociation.read(from: url) != nil
         }
     }
 

@@ -48,13 +48,13 @@ struct SupportModule: Equatable {
             "-emit-module",
             "-emit-object",
         ]
-        let fields = [
+        let fields: [Data] = [
             Data(schemaVersion.utf8),
             Data(source.utf8),
             Data(toolchain.compilerPath.utf8),
             Data(toolchain.compilerVersion.utf8),
-            Data(String(moduleCacheContext.arguments.count).utf8),
-        ] + moduleCacheContext.arguments.map { Data($0.utf8) } + [
+            Data(toolchain.target.utf8),
+            Data((toolchain.sdkPath ?? "").utf8),
             Data(String(actionArguments.count).utf8),
         ] + actionArguments.map { Data($0.utf8) }
         let fingerprint = CacheKey(
@@ -81,12 +81,12 @@ struct SupportModule: Equatable {
 struct SupportModuleMetadata: Codable, Equatable {
     let schemaVersion: String
     let fingerprint: String
-    let compilerArguments: [String]
+    let compilerConfiguration: [String]
 
     init(module: SupportModule) {
         schemaVersion = SupportModule.schemaVersion
         fingerprint = module.fingerprint.rawValue
-        compilerArguments = module.compilerArguments
+        compilerConfiguration = module.actionArguments
     }
 
     func write(to url: URL) throws {

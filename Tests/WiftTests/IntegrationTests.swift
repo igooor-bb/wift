@@ -25,6 +25,31 @@ import Testing
         }
     }
 
+    @Test func identicalScriptsShareExecutableAndPreserveLaunchPaths() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory, instrumentCompiler: true)
+            let source = """
+            import Wift
+            print(CommandLine.arguments[0])
+            print(Script.path.path)
+            print(#filePath)
+            """
+            let first = try fixture.writeScript(source, name: "first/script.swift")
+            let second = try fixture.writeScript(source, name: "second/script.swift")
+
+            let firstResult = try fixture.run(first)
+            let secondResult = try fixture.run(second)
+            let firstPath = try Script.resolve(first.path).path
+            let secondPath = try Script.resolve(second.path).path
+
+            #expect(firstResult.standardOutput == "\(firstPath)\n\(firstPath)\nscript.swift\n")
+            #expect(secondResult.standardOutput == "\(secondPath)\n\(secondPath)\nscript.swift\n")
+            #expect(try fixture.compilationCount() == 1)
+            #expect(try fixture.cachedExecutables().count == 1)
+            #expect(try fixture.cachedSources().isEmpty)
+        }
+    }
+
     @Test func sourceModificationCreatesANewEntry() throws {
         try withTemporaryDirectory { directory in
             let fixture = try Fixture(directory: directory)
@@ -145,7 +170,7 @@ import Testing
 
             let clean = try fixture.runWift(["cache", "clean", script.path])
             #expect(clean.exitCode == 0)
-            #expect(clean.standardOutput.contains("Removed 1 cache variant(s) for "))
+            #expect(clean.standardOutput.contains("Removed 1 cache association(s) for "))
             #expect(try fixture.cachedExecutables().isEmpty)
 
             _ = try fixture.run(script)
@@ -265,8 +290,9 @@ import Testing
     @Test func concurrentInvocationCompilesOnlyOnce() throws {
         try withTemporaryDirectory { directory in
             let fixture = try Fixture(directory: directory, instrumentCompiler: true)
-            let script = try fixture.writeScript("print(\"concurrent\")")
-            let results = try fixture.runConcurrently(script, count: 4)
+            let first = try fixture.writeScript("print(\"concurrent\")", name: "first/script.swift")
+            let second = try fixture.writeScript("print(\"concurrent\")", name: "second/script.swift")
+            let results = try fixture.runConcurrently([first, second, first, second])
 
             for result in results {
                 #expect(result.exitCode == 0, Comment(rawValue: result.standardError))
@@ -349,6 +375,29 @@ import Testing
         }
     }
 
+    @Test func restoredCacheAtAnotherRootReusesExecutable() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory, instrumentCompiler: true)
+            let source = "import Wift\nprint(Script.path.path)"
+            let first = try fixture.writeScript(source, name: "first/script.swift")
+            #expect(try fixture.run(first).exitCode == 0)
+
+            let restoredCache = directory.appendingPathComponent("restored-cache", isDirectory: true)
+            try FileManager.default.copyItem(at: fixture.cacheDirectory, to: restoredCache)
+            let second = try fixture.writeScript(source, name: "second/script.swift")
+            let result = try fixture.run(
+                second,
+                wiftArguments: ["--verbose"],
+                environment: ["WIFT_CACHE_DIR": restoredCache.path]
+            )
+
+            #expect(result.exitCode == 0, Comment(rawValue: result.standardError))
+            #expect(result.standardError.contains("wift: cache hit\n"))
+            #expect(!result.standardError.contains("wift: compiling\n"))
+            #expect(try fixture.compilationCount() == 1)
+        }
+    }
+
     @Test func cacheInfoAndCleanCoverEveryScriptVariant() throws {
         try withTemporaryDirectory { directory in
             let fixture = try Fixture(directory: directory)
@@ -364,9 +413,35 @@ import Testing
             #expect(info.standardOutput.contains("Support fingerprint: "))
 
             let clean = try fixture.runWift(["cache", "clean", script.path])
-            #expect(clean.standardOutput.contains("Removed 2 cache variant(s)"))
+            #expect(clean.standardOutput.contains("Removed 2 cache association(s)"))
             #expect(try fixture.cachedExecutables().isEmpty)
             #expect(try fixture.cachedSupportModules().count == 1)
+        }
+    }
+
+    @Test func sharedCleanupKeepsExecutableUntilLastPathIsRemoved() throws {
+        try withTemporaryDirectory { directory in
+            let fixture = try Fixture(directory: directory, instrumentCompiler: true)
+            let first = try fixture.writeScript("print(\"shared\")", name: "first/script.swift")
+            let second = try fixture.writeScript("print(\"shared\")", name: "second/script.swift")
+            _ = try fixture.run(first)
+            _ = try fixture.run(second)
+
+            for script in [first, second] {
+                let info = try fixture.runWift(["cache", "info", script.path])
+                #expect(info.standardOutput.contains("Variants: 1\n"))
+                #expect(info.standardOutput.contains(" ACTIVE\n"))
+            }
+
+            let firstClean = try fixture.runWift(["cache", "clean", first.path])
+            #expect(firstClean.standardOutput.contains("Removed 1 cache association(s)"))
+            #expect(try fixture.cachedExecutables().count == 1)
+            #expect(try fixture.run(second).standardOutput == "shared\n")
+            #expect(try fixture.compilationCount() == 1)
+
+            let secondClean = try fixture.runWift(["cache", "clean", second.path])
+            #expect(secondClean.standardOutput.contains("Removed 1 cache association(s)"))
+            #expect(try fixture.cachedExecutables().isEmpty)
         }
     }
 }
@@ -462,6 +537,10 @@ private struct Fixture {
         executable: Bool = false
     ) throws -> URL {
         let script = directory.appendingPathComponent(name)
+        try FileManager.default.createDirectory(
+            at: script.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         try Data(source.utf8).write(to: script)
         if executable {
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
@@ -528,8 +607,8 @@ private struct Fixture {
         handle.write(Data("continue\n".utf8))
     }
 
-    func runConcurrently(_ script: URL, count: Int) throws -> [CommandResult] {
-        let executions = try (0 ..< count).map { _ in
+    func runConcurrently(_ scripts: [URL]) throws -> [CommandResult] {
+        let executions = try scripts.map { script in
             try RunningProcess(
                 executable: wiftExecutable,
                 arguments: [script.path],
@@ -545,6 +624,10 @@ private struct Fixture {
 
     func cachedMetadata() throws -> [URL] {
         try cachedFiles(named: "metadata.json")
+    }
+
+    func cachedSources() throws -> [URL] {
+        try cachedFiles(named: "script.swift")
     }
 
     func cachedSupportModules() throws -> [URL] {

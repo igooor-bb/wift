@@ -20,8 +20,8 @@ struct CacheKeyTests {
         #expect(makeInput(source: "a").cacheKey() != makeInput(source: "b").cacheKey())
     }
 
-    @Test func pathChangeInvalidatesFingerprint() {
-        #expect(makeInput(path: "/a/script.swift").cacheKey() != makeInput(path: "/b/script.swift").cacheKey())
+    @Test func pathChangeDoesNotInvalidateFingerprint() {
+        #expect(makeInput(path: "/a/script.swift").cacheKey() == makeInput(path: "/b/script.swift").cacheKey())
     }
 
     @Test func toolchainChangeInvalidatesFingerprint() {
@@ -35,17 +35,25 @@ struct CacheKeyTests {
         #expect(makeInput().cacheKey() != makeInput(toolchain: other).cacheKey())
     }
 
-    @Test func moduleCacheContextChangeInvalidatesFingerprint() {
+    @Test func compilerConfigurationChangeInvalidatesFingerprint() {
         #expect(
-            makeInput(contextArguments: ["-Onone"]).cacheKey()
-                != makeInput(contextArguments: ["-O"]).cacheKey()
+            makeInput(compilerConfiguration: ["-Onone"]).cacheKey()
+                != makeInput(compilerConfiguration: ["-O"]).cacheKey()
         )
     }
 
-    @Test func actionArgumentsChangeInvalidatesFingerprint() {
+    @Test func cacheRootDoesNotAffectScriptOrSupportFingerprints() throws {
+        let firstCache = try Cache(root: URL(fileURLWithPath: "/cache/one"))
+        let secondCache = try Cache(root: URL(fileURLWithPath: "/cache/two"))
+        let firstContext = toolchain.moduleCacheContext(moduleCachePath: firstCache.moduleCacheDirectory.path)
+        let secondContext = toolchain.moduleCacheContext(moduleCachePath: secondCache.moduleCacheDirectory.path)
+        let firstSupport = SupportModule.resolve(toolchain: toolchain, moduleCacheContext: firstContext, cache: firstCache)
+        let secondSupport = SupportModule.resolve(toolchain: toolchain, moduleCacheContext: secondContext, cache: secondCache)
+
+        #expect(firstSupport.fingerprint == secondSupport.fingerprint)
         #expect(
-            makeInput(actionArguments: ["support-a.o"]).cacheKey()
-                != makeInput(actionArguments: ["support-b.o"]).cacheKey()
+            makeInput(supportFingerprint: firstSupport.fingerprint.rawValue).cacheKey()
+                == makeInput(supportFingerprint: secondSupport.fingerprint.rawValue).cacheKey()
         )
     }
 
@@ -85,15 +93,13 @@ struct CacheKeyTests {
         source: String = "print(1)",
         path: String = "/scripts/example.swift",
         toolchain: Toolchain? = nil,
-        contextArguments: [String] = ["-module-cache-path", "/cache/modules"],
-        actionArguments: [String] = ["-I", "/cache/support", "/cache/support/Wift.o"],
+        compilerConfiguration: [String] = [],
         supportFingerprint: String = "support"
     ) -> FingerprintInput {
         FingerprintInput(
             script: Script(path: path, contents: Data(source.utf8)),
             toolchain: toolchain ?? self.toolchain,
-            moduleCacheContext: ModuleCacheContext(arguments: contextArguments),
-            actionArguments: actionArguments,
+            compilerConfiguration: compilerConfiguration,
             supportFingerprint: CacheKey(rawValue: supportFingerprint)
         )
     }

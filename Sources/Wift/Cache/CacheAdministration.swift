@@ -46,10 +46,11 @@ struct CacheAdministration {
             fileManager: fileManager
         )
         let output = try context.cache.withAccessLock(mode: .shared) {
-            let entries = try context.cache.metadataEntries()
-                .filter { $0.metadata.sourcePath == context.script.path }
+            let entries = try context.cache.metadataEntries(associatedWith: context.script.path)
                 .sorted { $0.metadata.createdAt > $1.metadata.createdAt }
-            let activeExecutable = context.cache.cachedExecutable(for: context.key)
+            let activeExecutable = context.cache.hasPathAssociation(for: context.script.path, key: context.key)
+                ? context.cache.cachedExecutable(for: context.key)
+                : nil
             var lines = [
                 "Script: \(context.script.path)",
                 "Cache status: \(activeExecutable == nil ? "miss" : "hit")",
@@ -97,20 +98,19 @@ struct CacheAdministration {
                 return 0
             }
             try cache.prepare()
-            let keys = try cache.metadataEntries()
-                .filter { $0.metadata.sourcePath == script.path }
+            let keys = try cache.metadataEntries(associatedWith: script.path)
                 .map(\.key)
             var count = 0
             for key in keys {
                 let entryLock = try CacheLock(url: cache.lockURL(for: key))
-                if try entryLock.whileHeld({ try cache.removeEntry(for: key) }) {
+                if try entryLock.whileHeld({ try cache.removePathAssociation(for: script.path, key: key) }) {
                     count += 1
                 }
             }
             return count
         }
         if removedCount > 0 {
-            write("Removed \(removedCount) cache variant(s) for \(script.path)\n")
+            write("Removed \(removedCount) cache association(s) for \(script.path)\n")
         } else {
             write("No cache entry for \(script.path)\n")
         }

@@ -18,23 +18,21 @@ struct FingerprintInput {
 
     let script: Script
     let toolchain: Toolchain
-    let moduleCacheContext: ModuleCacheContext
-    let actionArguments: [String]
+    let compilerConfiguration: [String]
     let supportFingerprint: CacheKey
 
     func cacheKey() -> CacheKey {
-        var fields = [
+        var fields: [Data] = [
             Data(Self.schemaVersion.utf8),
-            Data(script.path.utf8),
             script.contents,
             Data(toolchain.compilerPath.utf8),
             Data(toolchain.compilerVersion.utf8),
+            Data(toolchain.target.utf8),
+            Data((toolchain.sdkPath ?? "").utf8),
             Data(supportFingerprint.rawValue.utf8),
-            Data(String(moduleCacheContext.arguments.count).utf8),
+            Data(String(compilerConfiguration.count).utf8),
         ]
-        fields.append(contentsOf: moduleCacheContext.arguments.map { Data($0.utf8) })
-        fields.append(Data(String(actionArguments.count).utf8))
-        fields.append(contentsOf: actionArguments.map { Data($0.utf8) })
+        fields.append(contentsOf: compilerConfiguration.map { Data($0.utf8) })
 
         return CacheKey(rawValue: SHA256.hexDigest(of: FingerprintSerializer.serialize(fields)))
     }

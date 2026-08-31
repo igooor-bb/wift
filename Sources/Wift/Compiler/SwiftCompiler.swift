@@ -12,26 +12,21 @@ struct SwiftCompiler {
         compilerArguments: [String],
         outputURL: URL
     ) throws {
-        let stagedSourceURL: URL? = if script.needsStagedSwiftSource {
-            outputURL.deletingLastPathComponent().appendingPathComponent("script.swift", isDirectory: false)
-        } else {
-            nil
-        }
-        if let stagedSourceURL {
-            do {
-                try script.contents.write(to: stagedSourceURL, options: .atomic)
-            } catch {
-                throw WiftError("unable to stage script source: \(error.localizedDescription)")
-            }
+        let stagingDirectory = outputURL.deletingLastPathComponent()
+        let stagedSourceURL = stagingDirectory.appendingPathComponent("script.swift", isDirectory: false)
+        do {
+            try script.contents.write(to: stagedSourceURL, options: .atomic)
+        } catch {
+            throw WiftError("unable to stage script source: \(error.localizedDescription)")
         }
         defer {
-            if let stagedSourceURL {
-                try? FileManager.default.removeItem(at: stagedSourceURL)
-            }
+            try? FileManager.default.removeItem(at: stagedSourceURL)
         }
 
-        let sourcePath = stagedSourceURL?.path ?? script.path
-        try invoke(arguments: compilerArguments + [sourcePath, "-o", outputURL.path])
+        try invoke(
+            arguments: compilerArguments + ["script.swift", "-o", outputURL.path],
+            currentDirectoryURL: stagingDirectory
+        )
     }
 
     func compileSupportModule(_ module: SupportModule) throws {
@@ -46,10 +41,11 @@ struct SwiftCompiler {
         )
     }
 
-    private func invoke(arguments: [String]) throws {
+    private func invoke(arguments: [String], currentDirectoryURL: URL? = nil) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: toolchain.compilerPath)
         process.arguments = arguments
+        process.currentDirectoryURL = currentDirectoryURL
         process.standardInput = FileHandle.standardInput
         process.standardOutput = FileHandle.standardOutput
         process.standardError = FileHandle.standardError

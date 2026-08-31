@@ -3,7 +3,6 @@ import Foundation
 
 struct CacheMetadata: Codable, Equatable {
     let schemaVersion: Int
-    let sourcePath: String
     let sourceHash: String
     let cacheKey: String
     let compilerPath: String
@@ -11,7 +10,7 @@ struct CacheMetadata: Codable, Equatable {
     let target: String
     let sdk: String?
     let supportFingerprint: String
-    let compilerArguments: [String]
+    let compilerConfiguration: [String]
     let createdAt: Date
 
     init(
@@ -19,11 +18,10 @@ struct CacheMetadata: Codable, Equatable {
         key: CacheKey,
         toolchain: Toolchain,
         supportFingerprint: CacheKey,
-        compilerArguments: [String],
+        compilerConfiguration: [String],
         createdAt: Date = Date()
     ) {
         schemaVersion = 1
-        sourcePath = script.path
         sourceHash = SHA256.hexDigest(of: script.contents)
         cacheKey = key.rawValue
         compilerPath = toolchain.compilerPath
@@ -31,7 +29,7 @@ struct CacheMetadata: Codable, Equatable {
         target = toolchain.target
         sdk = toolchain.sdkPath
         self.supportFingerprint = supportFingerprint.rawValue
-        self.compilerArguments = compilerArguments
+        self.compilerConfiguration = compilerConfiguration
         self.createdAt = createdAt
     }
 
