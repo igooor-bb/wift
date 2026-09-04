@@ -11,6 +11,7 @@ let package = Package(
         .executable(name: "wift", targets: ["Wift"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/tuist/XcodeProj.git", from: "9.16.0"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.6.1"),
         .package(
             url: "https://github.com/ordo-one/benchmark",
@@ -27,6 +28,7 @@ let package = Package(
             name: "Wift",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "XcodeProj", package: "XcodeProj"),
             ],
             path: "Sources/Wift",
             plugins: [

@@ -1,6 +1,15 @@
 {
-  "originHash" : "577991f11bbc0ba4b1aec4234e4d54f39a28bf33bccba55c197f8c0ab5fdd8d2",
+  "originHash" : "37e9ec2011e6613ab843347f814339e9bf07d94e9852a434abe41434377a2c3b",
   "pins" : [
+    {
+      "identity" : "aexml",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tadija/AEXML.git",
+      "state" : {
+        "revision" : "db806756c989760b35108146381535aec231092b",
+        "version" : "4.7.0"
+      }
+    },
     {
       "identity" : "benchmark",
       "kind" : "remoteSourceControl",
@@ -17,6 +26,24 @@
       "state" : {
         "revision" : "c2e1210df04b4fff47e53f2f9dad9cc45ae15d63",
         "version" : "0.2.0"
+      }
+    },
+    {
+      "identity" : "pathkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kylef/PathKit.git",
+      "state" : {
+        "revision" : "3bfd2737b700b9a36565a8c94f4ad2b050a5e574",
+        "version" : "1.0.1"
+      }
+    },
+    {
+      "identity" : "spectre",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kylef/Spectre.git",
+      "state" : {
+        "revision" : "26cc5e9ae0947092c7139ef7ba612e34646086c7",
+        "version" : "0.10.1"
       }
     },
     {
@@ -62,6 +89,15 @@
       "state" : {
         "revision" : "a27a07300cf4ae322e0079ca0a475c5583dd575f",
         "version" : "0.0.2"
+      }
+    },
+    {
+      "identity" : "xcodeproj",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tuist/XcodeProj.git",
+      "state" : {
+        "revision" : "cfc3234fa2a60babbd26712ac0dec0d44734c019",
+        "version" : "9.16.0"
       }
     }
   ],
