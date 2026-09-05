@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: Create a draft to review before publishing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    name: Validate release version
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Read VERSION and reject existing releases
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version=$(cat VERSION)
+          version=${version%$'\r'}
+          pattern='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if [[ ! $version =~ $pattern ]]; then
+            echo '::error::VERSION must contain a semantic version without a v prefix.'
+            exit 1
+          fi
+          tag="v$version"
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            echo "::error::Tag $tag already exists. Update VERSION for a new release."
+            exit 1
+          fi
+          gh api --paginate "repos/$GH_REPO/releases" --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags"
+          if grep -Fxq "$tag" "$RUNNER_TEMP/release-tags"; then
+            echo "::error::Release $tag already exists, possibly as a draft. Review it in Releases."
+            exit 1
+          fi
+          prerelease=false
+          if [[ ${version%%+*} == *-* ]]; then prerelease=true; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          printf '### %s\n\nSource commit: %s\n' "$tag" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Check and package (${{ matrix.arch }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-26-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
+      MISE_JOBS: 1
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: jdx/mise-action@v4
+      - name: Check runner and toolchain
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+          xcodebuild -version
+          swift --version
+      - run: mise run check
+      - name: Build, smoke-test and package
+        run: sh Scripts/package-release.sh "$RUNNER_TEMP/release-assets"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.arch }}
+          path: ${{ runner.temp }}/release-assets/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Create GitHub release
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create release with archives and checksums
+        working-directory: release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          DRAFT: ${{ inputs.draft }}
+        run: |
+          # Recheck after the builds in case a tag was created while they ran.
+          existing_tag=$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG")
+          if [[ -n $existing_tag ]]; then
+            echo "::error::Tag $RELEASE_TAG already exists. It will not be reused."
+            exit 1
+          fi
+          archives=("wift-$RELEASE_TAG-macos-arm64.tar.gz" "wift-$RELEASE_TAG-macos-x86_64.tar.gz")
+          sha256sum "${archives[@]}" > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          flags=()
+          if [[ $PRERELEASE == true ]]; then flags+=(--prerelease); fi
+          # Upload everything to a draft before making any assets public.
+          gh release create "$RELEASE_TAG" "${archives[@]}" SHA256SUMS \
+            --target "$GITHUB_SHA" --title "$RELEASE_TAG" --generate-notes --draft "${flags[@]}"
+          if [[ $DRAFT != true ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false
+          fi
+          release_url=$(gh release view "$RELEASE_TAG" --json url --jq .url)
+          printf '### Release ready\n\n[%s](%s)\n\nDraft: %s\n' \
+            "$RELEASE_TAG" "$release_url" "$DRAFT" >> "$GITHUB_STEP_SUMMARY"

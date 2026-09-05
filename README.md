@@ -1,7 +1,7 @@
 # wift
 
 [![CI](https://img.shields.io/github/actions/workflow/status/igooor-bb/wift/ci.yml?branch=main&label=CI)](https://github.com/igooor-bb/wift/actions/workflows/ci.yml)
-[![Swift 6.2+](https://img.shields.io/badge/Swift-6.2%2B-F05138?logo=swift&logoColor=white)](https://www.swift.org/)
+[![Build: Swift 6.2+](https://img.shields.io/badge/build-Swift%206.2%2B-F05138?logo=swift&logoColor=white)](#requirements)
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-000000?logo=apple&logoColor=white)](https://www.apple.com/macos/)
 
 **A lightweight, fast, and minimal runner for single-file Swift scripts.**
@@ -14,9 +14,19 @@ Shell is a great fit for small command chains. As automation grows, Swift offers
 
 ## Requirements
 
+### Running scripts
+
 - macOS 13 or newer
-- Swift 6.2 or newer from the active Xcode toolchain
-- [`mise`](https://mise.jdx.dev/) for the repository commands below
+- Swift 5.9 or newer (`swiftc` available on `PATH`) and a compatible macOS SDK
+
+These requirements also apply to a prebuilt wift binary: wift uses the installed compiler to compile scripts and the built-in `Wift` module. The module requires Swift 5.9 language features; your scripts may require a newer compiler.
+
+### Building from source
+
+- Swift 6.2 or newer, including Swift Package Manager
+- [`mise`](https://mise.jdx.dev/) for the repository tasks shown below
+
+The build machine must meet the selected Swift toolchain's macOS requirements. Swift 6.2 is the minimum for building wift itself; it does not define the minimum compiler version for running scripts with a prebuilt binary.
 
 ## Installation
 
