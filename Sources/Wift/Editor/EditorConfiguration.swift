@@ -7,14 +7,15 @@ struct EditorConfiguration {
     let swiftDirectory: String
 
     var analysisArguments: [String] {
-        module.moduleCacheContext.arguments + ["-I", module.directory.path]
+        // A filename such as Wift.swift must not make the script shadow its imports.
+        module.moduleCacheContext.arguments + ["-module-name", "WiftScript", "-I", module.directory.path]
     }
 
     func vscodeFiles() throws -> [String: Data] {
         let commands: [[String: Any]] = [[
             "directory": URL(fileURLWithPath: scriptPath).deletingLastPathComponent().path,
             "file": scriptPath,
-            "arguments": [toolchain.compilerPath] + analysisArguments + [scriptPath],
+            "arguments": [swiftDirectory + "/swiftc"] + analysisArguments + [scriptPath],
         ]]
         let workspace: [String: Any] = [
             "folders": [["path": ".", "name": URL(fileURLWithPath: scriptPath).lastPathComponent]],

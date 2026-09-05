@@ -7,6 +7,9 @@ struct WiftCommand: ParsableCommand {
         abstract: "Run a cached single-file Swift script.",
         usage: "wift [options] <script.swift> [arguments...]",
         discussion: """
+        Edit scripts:
+          wift edit [--editor vscode|xcode|<executable>] <script.swift>
+
         Cache commands:
           wift cache
           wift cache path
@@ -19,10 +22,10 @@ struct WiftCommand: ParsableCommand {
     @Flag(name: [.short, .long], help: "Show diagnostic information.")
     var verbose = false
 
-    @Argument(help: "Path to a Swift script or cache command.")
+    @Argument(help: "Path to a Swift script, edit, or cache command.")
     var commandOrScript: String?
 
-    @Argument(parsing: .captureForPassthrough, help: "Arguments passed to the script or cache command.")
+    @Argument(parsing: .captureForPassthrough, help: "Arguments passed to the script, edit, or cache command.")
     var trailingArguments: [String] = []
 
     mutating func run() throws {
@@ -36,6 +39,9 @@ struct WiftCommand: ParsableCommand {
             case let .run(scriptPath, arguments, verbose):
                 try Runner(diagnostics: Diagnostics(isVerbose: verbose))
                     .run(scriptPath: scriptPath, arguments: arguments)
+
+            case let .edit(scriptPath, editor):
+                try EditRunner().run(scriptPath: scriptPath, editorName: editor)
 
             case .cacheSummary:
                 try CacheAdministration().printSummary()
@@ -57,6 +63,11 @@ struct WiftCommand: ParsableCommand {
         } catch let error as WiftError {
             FileHandle.standardError.write(Data("wift: \(error.description)\n".utf8))
             throw ExitCode(error.exitCode)
+        } catch {
+            if commandOrScript == "edit" {
+                WiftEditCommand.exit(withError: error)
+            }
+            throw error
         }
     }
 }

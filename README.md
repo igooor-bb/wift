@@ -10,7 +10,7 @@ Swift already supports scripting: you can run a source file directly with `swift
 
 Shell is a great fit for small command chains. As automation grows, Swift offers compelling advantages: static types, structured error handling, modern concurrency, and rich platform APIs can make scripts easier to evolve and safer to maintain, while keeping the convenience of a single source file.
 
-`wift` keeps the same simple scripting workflow, but compiles each script once and stores the executable in a content-addressed cache. Cache hits launch the existing executable directly, making repeated runs fast. The tool deliberately stays small: no generated projects, package management, daemon, or background service.
+`wift` keeps the same simple scripting workflow, but compiles each script once and stores the executable in a content-addressed cache. Cache hits launch the existing executable directly, making repeated runs fast. Normal execution needs no project, package management, daemon, or background service. Optional editor integration prepares a separate workspace when requested.
 
 ## Requirements
 
@@ -97,6 +97,26 @@ let files = try cmd("find", ".", "-name", "*.swift")
 Commands use argument arrays rather than shell parsing and are checked by default. Shell evaluation is available through the explicit `shell(...)` and `shell(raw:)` APIs. The module also supports captured output, pipelines, async execution, streaming, cancellation, script metadata, and stderr helpers.
 
 See [`Examples/Wift.swift`](Examples/Wift.swift) for a complete example.
+
+## Editing scripts
+
+Open a script in VS Code or Xcode with Swift completion and diagnostics, including the built-in Wift API:
+
+```bash
+wift edit script.swift
+```
+
+wift uses VS Code when available, then Xcode. Choose an editor explicitly or set `WIFT_EDITOR` as your default:
+
+```bash
+wift edit --editor vscode script.swift
+wift edit --editor xcode script.swift
+wift edit --editor /usr/bin/vim script.swift
+```
+
+VS Code's official **Swift** extension (`swiftlang.swift-vscode`) provides the language features. If you haven't installed it yet, `wift edit` shows installation instructions. Xcode has Swift support built in. You can also pass another editor's executable to open the script as text.
+
+You edit the original file, so saving works as usual. Save your changes and run them with `wift script.swift`.
 
 ## Diagnostics and cache
 

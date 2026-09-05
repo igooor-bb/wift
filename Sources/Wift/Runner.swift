@@ -55,7 +55,7 @@ struct Runner {
             diagnostics.log("exec")
             try Exec.replaceCurrentProcess(
                 executable: executable,
-                scriptPath: script.path,
+                argumentZero: script.path,
                 arguments: arguments
             )
         }
@@ -109,7 +109,7 @@ struct Runner {
         diagnostics.log("exec")
         try Exec.replaceCurrentProcess(
             executable: executable,
-            scriptPath: script.path,
+            argumentZero: script.path,
             arguments: arguments
         )
     }

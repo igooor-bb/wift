@@ -1,5 +1,6 @@
 enum WiftInvocation: Equatable {
     case run(scriptPath: String, arguments: [String], verbose: Bool)
+    case edit(scriptPath: String, editor: String?)
     case cacheSummary
     case cachePath
     case cacheInfo(scriptPath: String)
@@ -12,6 +13,11 @@ enum WiftInvocation: Equatable {
     ) throws -> WiftInvocation {
         guard let commandOrScript else {
             throw CLIError("missing script path or command")
+        }
+        if commandOrScript == "edit" {
+            guard !verbose else { throw CLIError("--verbose is only valid when running a script") }
+            let command = try WiftEditCommand.parse(trailingArguments)
+            return .edit(scriptPath: command.scriptPath, editor: command.editor)
         }
         guard commandOrScript == "cache" else {
             return .run(

@@ -29,7 +29,10 @@ extension EditorConfiguration {
             "CODE_SIGNING_ALLOWED": "NO",
             "ALWAYS_SEARCH_USER_PATHS": "NO",
         ]
-        let source = PBXFileReference(sourceTree: .absolute, lastKnownFileType: "sourcecode.swift", path: scriptPath)
+        let source = PBXFileReference(
+            sourceTree: .absolute, name: URL(fileURLWithPath: scriptPath).lastPathComponent,
+            lastKnownFileType: "sourcecode.swift", path: scriptPath
+        )
         let product = PBXFileReference(sourceTree: .buildProductsDir, explicitFileType: "compiled.mach-o.executable", path: "Script")
         let products = PBXGroup(children: [product], sourceTree: .group, name: "Products")
         let group = PBXGroup(children: [source, products], sourceTree: .group)
